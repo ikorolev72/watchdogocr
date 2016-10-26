@@ -5,11 +5,10 @@
 
 use Data::Dumper;
 use Getopt::Long;
-use Mail::Sendmail;
 use DBI;
+use lib "/home/directware/watchdogocr/"; 
 use lib "/home/directware/perl5/lib/perl5/x86_64-linux-gnu-thread-multi/"; 
 use DBD::ODBC;
-
 
 use watchdog_config;
 
@@ -19,19 +18,7 @@ GetOptions (
 
 show_help() if($help);
 
-my $dbh = DBI->connect( @DB_CONNECTION,  {
-   PrintError       => 0,
-   RaiseError       => 1,
-   AutoCommit       => 1,
-   FetchHashKeyName => 'NAME_lc',
-   # we will set buffer for strings to 50mb
-   LongReadLen => 50000000, 
-}) ; 
 
-unless( $dbh ) {
-	w2log( "Cannot connect to database: $!") ;
-	exit 1;
-}
 
 
 if( $daemon ) {
@@ -87,8 +74,13 @@ sub scan_dir {
 						next;
 					}
 				} 
-				next unless( ocr_file( $dir, $filename ) ); # if any error , then process next file 
+				# next unless( ocr_file( $dir, $filename ) ); # if any error , then process next file 
+				unless( ocr_file( $dir, $filename ) ) {
+					w2log( "Error while ocr file $dir/$filename"); 					
+					# do someting , eg email to admin
+				} 
 				$lastchecked_db->{$filename}->{mtime}=$mtime;
+				
 			}
 			else {
 				next;
@@ -108,7 +100,7 @@ sub scan_dir {
 sub ocr_file {
 	my $dir=shift;	
 	my $filename=shift;	
-	if( system( "/usr/local/bin/pypdfocr $dir/$filename" )!=0 ) {
+	if( system( "/usr/local/bin/pypdfocr $dir/$filename >>$LOGDIR/pypdfocr.log 2>&1" )!=0 ) {
 		w2log( "Error while ocr file $filename");
 		return 0;
 	}
@@ -120,58 +112,88 @@ sub ocr_file {
 		w2log( "File $filename_ocr do not exist (or not readable)"); 
 		return 0;
 	}
+# "/usr/local/bin/pdf2txt.py -D auto -V -t text" 
 	
 	my $filename_tmp="$TMPDIR/$perfix.txt";	
-	if( system( "/usr/local/bin/pdf2txt.py -o $filename_tmp -t text $filename_ocr" )!=0 ) {
+	if( system( "/usr/local/bin/pdf2txt.py -o $filename_tmp -t text $filename_ocr >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
 		w2log( "Error while convert file $dir/$filename to text");
 		return 0;		
 	}
 	my $filename_tmp="$TMPDIR/$perfix.xml";	
-	if( system( "/usr/local/bin/pdf2txt.py -o $filename_tmp -t xml $filename_ocr" )!=0 ) {
+	if( system( "/usr/local/bin/pdf2txt.py -o $filename_tmp -t xml $filename_ocr >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
 		w2log( "Error while convert file $dir/$filename to xml");
 		return 0;		
 	}
 	my $filename_tmp="$TMPDIR/$perfix.html";	
-	if( system( "/usr/local/bin/pdf2txt.py -o $filename_tmp -t html $filename_ocr" )!=0 ) {
+	if( system( "/usr/local/bin/pdf2txt.py -o $filename_tmp -t html $filename_ocr >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
 		w2log( "Error while convert file $dir/$filename to html");
 		return 0;		
 	}
-	if( insert_record_into_database( "$dir/$filename", $perfix ) ) {
-		w2log( "Error while convert file $dir/$filename to html");
+
+	my $dbh=db_connect();
+	unless( $dbh ) {
+		w2log( "Cannot connect to database");
+		db_disconnect($dbh);
 		return 0;				
 	}
+	unless( insert_record_into_database( $dbh, "$dir/$filename", $perfix ) ) {
+		w2log( "Cannot insert record into database");
+		db_disconnect($dbh);
+		return 0;				
+	}
+	db_disconnect($dbh);
 	return 1;
 }
 
-# "/usr/local/bin/pdf2txt.py [-d] [-p pagenos] [-m maxpages] [-P password] [-o output] [-C] [-n] [-A] [-V] [-M char_margin] [-L line_margin] [-W word_margin] [-F boxes_flow] [-Y layout_mode] [-O output_dir] [-R rotation] [-S] [-t text|html|xml|tag] [-c codec] [-s scale] file .."
-# "/usr/local/bin/pdf2txt.py -D auto -V -t text" 
-# "/usr/local/bin/pdf2txt.py -t xml" 
-# "/usr/local/bin/pdf2txt.py -t html" 
+sub db_connect {
+	my $dbh = DBI->connect( @DB_CONNECTION,  {
+		PrintError       => 0,
+		RaiseError       => 1,
+		AutoCommit       => 1,
+		FetchHashKeyName => 'NAME_lc',
+		# we will set buffer for strings to 50mb
+		LongReadLen => 50000000, 
+	}) ; 
+
+	unless( $dbh ) {
+		w2log( "Cannot connect to database: $!") ;
+		return 0;
+	}
+	return $dbh;
+}
+
+sub db_disconnect {
+	my $dbh=shift;
+	$dbh->disconnect;
+}
+
 
 sub insert_record_into_database {
+	my $dbh=shift;
 	my $ffilename=shift;
 	my $perfix=shift;
-#id        
-#EntryTime 
-#ftext     
-#fjson     
-#fxml      
-#ffilename	
+	
+	#id        
+	#EntryTime 
+	#ftext     
+	#fjson     
+	#fxml      
+	#ffilename	
+	
 	########### temporary only for testing
-	my $id=time();
+	# my $id=time();
 	###########
 	my $EntryTime=get_date( ); # by default
-	#my $EntryTime=get_date( time(), "%s%.2i%.2i %.2i:%.2i:%.2i" );
-	# YYYYMMDD hh:mm:ss
+	#my $EntryTime=get_date( time(), "%s%.2i%.2i %.2i:%.2i:%.2i" ); # YYYYMMDD hh:mm:ss
 	my $ftext=ReadFile( "$TMPDIR/$perfix.txt" );
 	my $fjson='';
 	my $fxml=ReadFile( "$TMPDIR/$perfix.xml" );
 	my $fhtml=ReadFile( "$TMPDIR/$perfix.html" );
 	
-	my $sql="insert into OCREntries values( ?, ?, ?, ?, ? ,? ) ;";
+	my $sql="insert into OCREntries values(  ?, ?, ?, ? ,? ) ;";
 	eval {
 		my $sth = $dbh->prepare( $sql );
-		my $rv = $sth->execute( $id, $EntryTime, $ftext, $fjson, $fxml, $ffilename  );
+		my $rv = $sth->execute( $EntryTime, $ftext, $fjson, $fxml, $ffilename  );
 	};
 
 	if( $@ ){
@@ -235,7 +257,7 @@ sub AppendFile {
 					
 sub show_help {
 print STDERR "
-Check dirs, search keywords in logfiles and send mail if alert
+Check dirs, search new files, ocr and save result into database
 Usage: $0  [ --daemon ]  [--help]
 where:
 Sample:
