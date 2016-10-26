@@ -157,14 +157,30 @@ sub insert_record_into_database {
 #fjson     
 #fxml      
 #ffilename	
-	my $fxml=ReadFile( "$TMPDIR/$perfix.xml" );
+	########### temporary only for testing
+	my $id=time();
+	###########
+	my $EntryTime=get_date( ); # by default
+	#my $EntryTime=get_date( time(), "%s%.2i%.2i %.2i:%.2i:%.2i" );
+	# YYYYMMDD hh:mm:ss
 	my $ftext=ReadFile( "$TMPDIR/$perfix.txt" );
+	my $fjson='';
+	my $fxml=ReadFile( "$TMPDIR/$perfix.xml" );
 	my $fhtml=ReadFile( "$TMPDIR/$perfix.html" );
+	
+	my $sql="insert into OCREntries values( ?, ?, ?, ?, ? ,? ) ;";
+	eval {
+		my $sth = $dbh->prepare( $sql );
+		my $rv = $sth->execute( $id, $EntryTime, $ftext, $fjson, $fxml, $ffilename  );
+	};
 
+	if( $@ ){
+		w2log( "Error. Sql:$sql . Error: $@" );
+		return 0;
+	}
+	return 1;
 }
 	
-
-
 
 sub get_date {
 	my $time=shift() || time();
