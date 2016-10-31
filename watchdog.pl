@@ -9,6 +9,9 @@ use DBI;
 use lib "/home/directware/watchdogocr/"; 
 use lib "/home/directware/perl5/lib/perl5/x86_64-linux-gnu-thread-multi/"; 
 use DBD::ODBC;
+#use Encode::Encoder qw(encoder);
+use XML::Simple;
+use JSON::XS;
 
 use watchdog_config;
 
@@ -19,20 +22,14 @@ GetOptions (
 show_help() if($help);
 
 
-
-
 if( $daemon ) {
 	$DEBUG=0;
 	while( 1 ) {
-		foreach $i ( 0..$#SCAN_DIRS ) {
-			scan_dir( $SCAN_DIRS[$i], $LAST_SCANED_TIME_DB[$i] );
-		}	
+		scan_dir( $SCAN_DIR, $LAST_SCANED_TIME_DB );
 		sleep( $SCAN_INTERVAL );
 	}
 } else {
-		foreach $i ( 0..$#SCAN_DIRS ) {
-			scan_dir( $SCAN_DIRS[$i], $LAST_SCANED_TIME_DB[$i] );
-		}	
+		scan_dir( $SCAN_DIR, $LAST_SCANED_TIME_DB );
 }
 
 exit(0);
@@ -76,7 +73,7 @@ sub scan_dir {
 				} 
 				# next unless( ocr_file( $dir, $filename ) ); # if any error , then process next file 
 				unless( ocr_file( $dir, $filename ) ) {
-					w2log( "Error while ocr file $dir/$filename"); 					
+					w2log( "2.Error while ocr file $dir/$filename"); 					
 					# do someting , eg email to admin
 				} 
 				$lastchecked_db->{$filename}->{mtime}=$mtime;
@@ -100,13 +97,13 @@ sub scan_dir {
 sub ocr_file {
 	my $dir=shift;	
 	my $filename=shift;	
-	if( system( "/usr/local/bin/pypdfocr $dir/$filename >>$LOGDIR/pypdfocr.log 2>&1" )!=0 ) {
-		w2log( "Error while ocr file $filename");
+	if( system( "/usr/local/bin/pypdfocr '$dir/$filename' >>$LOGDIR/pypdfocr.log 2>&1" )!=0 ) {
+		w2log( "1.Error while ocr file '$filename'");
 		return 0;
 	}
-	$filename=~/^(\w+)_ocr.pdf$/;
-	my $perfix=$1; # for temporary files and search the ocr files
-	my $filename_ocr="$dir/${perfix}_ocr.pdf";
+	$filename=~/^([\w|\s]+)_ocr.pdf$/;
+	my $prefix=$1; # for temporary files and search the ocr files
+	my $filename_ocr="$dir/${prefix}_ocr.pdf";
 
 	unless( -r $filename_ocr ) {
 		w2log( "File $filename_ocr do not exist (or not readable)"); 
@@ -114,19 +111,19 @@ sub ocr_file {
 	}
 # "/usr/local/bin/pdf2txt.py -D auto -V -t text" 
 	
-	my $filename_tmp="$TMPDIR/$perfix.txt";	
-	if( system( "/usr/local/bin/pdf2txt.py -o $filename_tmp -t text $filename_ocr >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
-		w2log( "Error while convert file $dir/$filename to text");
+	my $filename_tmp="$TMPDIR/$prefix.txt";	
+	if( system( "/usr/local/bin/pdf2txt.py -o '$filename_tmp' -t text '$filename_ocr' >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
+		w2log( "Error while convert file '$dir/$filename' to text");
 		return 0;		
 	}
-	my $filename_tmp="$TMPDIR/$perfix.xml";	
-	if( system( "/usr/local/bin/pdf2txt.py -o $filename_tmp -t xml $filename_ocr >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
-		w2log( "Error while convert file $dir/$filename to xml");
+	my $filename_tmp="$TMPDIR/$prefix.xml";	
+	if( system( "/usr/local/bin/pdf2txt.py -o '$filename_tmp' -t xml '$filename_ocr' >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
+		w2log( "Error while convert file '$dir/$filename' to xml");
 		return 0;		
 	}
-	my $filename_tmp="$TMPDIR/$perfix.html";	
-	if( system( "/usr/local/bin/pdf2txt.py -o $filename_tmp -t html $filename_ocr >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
-		w2log( "Error while convert file $dir/$filename to html");
+	my $filename_tmp="$TMPDIR/$prefix.html";	
+	if( system( "/usr/local/bin/pdf2txt.py -o '$filename_tmp' -t html '$filename_ocr' >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
+		w2log( "Error while convert file '$dir/$filename' to html");
 		return 0;		
 	}
 
@@ -136,7 +133,7 @@ sub ocr_file {
 		db_disconnect($dbh);
 		return 0;				
 	}
-	unless( insert_record_into_database( $dbh, "$dir/$filename", $perfix ) ) {
+	unless( insert_record_into_database( $dbh, "$dir/$filename", $prefix ) ) {
 		w2log( "Cannot insert record into database");
 		db_disconnect($dbh);
 		return 0;				
@@ -171,7 +168,7 @@ sub db_disconnect {
 sub insert_record_into_database {
 	my $dbh=shift;
 	my $ffilename=shift;
-	my $perfix=shift;
+	my $prefix=shift;
 	
 	#id        
 	#EntryTime 
@@ -180,20 +177,38 @@ sub insert_record_into_database {
 	#fxml      
 	#ffilename	
 	
-	########### temporary only for testing
-	# my $id=time();
+
 	###########
 	my $EntryTime=get_date( ); # by default
-	#my $EntryTime=get_date( time(), "%s%.2i%.2i %.2i:%.2i:%.2i" ); # YYYYMMDD hh:mm:ss
-	my $ftext=ReadFile( "$TMPDIR/$perfix.txt" );
-	my $fjson='';
-	my $fxml=ReadFile( "$TMPDIR/$perfix.xml" );
-	my $fhtml=ReadFile( "$TMPDIR/$perfix.html" );
+	my $ftext=ReadFile( "$TMPDIR/$prefix.txt" );	
+	my $fxml=ReadFile( "$TMPDIR/$prefix.xml" );
+	my $fhtml=ReadFile( "$TMPDIR/$prefix.html" );
+	my $fjson=xml2json( $fxml ) ;
 	
-	my $sql="insert into OCREntries values(  ?, ?, ?, ? ,? ) ;";
+#		$ftext=encoder($ftext)->utf8->latin1;
+#		$fxml=encoder($fxml)->utf8->latin1;
+#		$fhtml=encoder($fhtml)->utf8->latin1;
+		
+		#print "fhtml:". substr( $fhtml, 0, 255)."\n" ;
+		#print "fxml:". substr( $fxml, 0, 255)."\n" ;
+		#print "ftxt:". substr( $ftext, 0, 255)."\n" ;
+		#$ftext=substr( $ftext, 0, 14330);
+		#$ftext=$dbh->quote( $ftext );
+		
+
+	my $sql="insert into OCREntries ( EntryTime,ftext,fjson,fhtml,fxml,ffilename ) values(  ?, ?, ?, ?, ?, ? ) ;";
+	my $sth;
+	my $rv;	
 	eval {
-		my $sth = $dbh->prepare( $sql );
-		my $rv = $sth->execute( $EntryTime, $ftext, $fjson, $fxml, $ffilename  );
+		$sth = $dbh->prepare( $sql );
+		#$rv = $sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilename  );
+		$sth->bind_param(1, $EntryTime);		
+		$sth->bind_param(2, $ftext, DBI::SQL_LONGVARCHAR);		
+		$sth->bind_param(3, $fjson, DBI::SQL_LONGVARCHAR);		
+		$sth->bind_param(4, $fhtml, DBI::SQL_LONGVARCHAR);		
+		$sth->bind_param(5, $fxml, DBI::SQL_LONGVARCHAR);		
+		$sth->bind_param(6, $ffilename);
+		$sth->execute()
 	};
 
 	if( $@ ){
@@ -230,7 +245,9 @@ sub w2log {
 sub ReadFile {
 	my $filename=shift;
 	my $ret="";
+#	open (IN,"<:encoding(UTF-8)","$filename") || w2log("Can't open file $filename") ;
 	open (IN,"$filename") || w2log("Can't open file $filename") ;
+		binmode(IN);
 		while (<IN>) { $ret.=$_; }
 	close (IN);
 	return $ret;
@@ -254,6 +271,22 @@ sub AppendFile {
 	return 1;
 }
 					
+sub xml2json {
+        my $xml=shift;
+		my $ref;
+        eval { $ref=XMLin( $xml,  ForceArray=>0 , ForceContent =>0 , KeyAttr => 1, KeepRoot => 1, SuppressEmpty => '' ) } ;
+                if($@) {
+                        w2log ( "XML file $filename error: $@" );
+                        return( undef );
+						
+                }
+		my $coder = JSON::XS->new->utf8->pretty->allow_nonref; # bugs with JSON module and threads. we need use JSON::XS
+		my $json = $coder->encode ($ref);
+        return $json;
+}
+
+
+
 					
 sub show_help {
 print STDERR "

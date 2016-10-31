@@ -26,16 +26,14 @@ $TMPDIR="$WORKING_DIR/var/tmp";
 # log file for errors with check_logs script ( eg 'cannot open file', etc)
 $LOGFILE="$LOGDIR/".basename($0).".log";
 
+$SCAN_DIR='/home/directware/docs';
+$DIR_FOR_PAGES_OCR="$SCAN_DIR/pages";
+$DIR_FOR_RUNNING_OCR="$SCAN_DIR/running";
+$DIR_FOR_FINISHED_OCR="$SCAN_DIR/finished";
+$DIR_FOR_FAILED_OCR="$SCAN_DIR/failed";
 
-@SCAN_DIRS=( 
-	'/home/directware/docs/', 
-	); 
-	
-@LAST_SCANED_TIME_DB=( 
-	"$WORKING_DIR/var/last_scaned_time_dir0.txt",
-	); 
-	
-$CHECK_FILE_MASK='(\w+)(?<!_ocr)\.pdf';
+$LAST_SCANED_TIME_DB="$WORKING_DIR/var/last_scaned_time_dir0.txt" ;
+$CHECK_FILE_MASK='([\w|\s]+)(?<!_ocr)\.pdf';
 
 
 
