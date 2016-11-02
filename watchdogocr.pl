@@ -30,19 +30,15 @@ exit(0);
 
 
 # this function scan dir,  loking for new pdf-file, cut this file to pages
-# and then  
 sub scan_dir {	
 	my @scan_dir_files=get_files_in_dir( $SCAN_DIR, "^$CHECK_FILE_MASK\$" );
 	if( $#scan_dir_files < 0 ) {
 		return 1;
 	}
 	foreach $filename ( @scan_dir_files ) {		
-		# here must be cutting utilite for pdf file. For debuging - simple move file
-		# if( rename( "$SCAN_DIR/$filename", "$DIR_FOR_PAGES_OCR/$filename" ) ) {
-		
-		$filename=~/^$CHECK_FILE_MASK$/;
-		my $prefix=$1; # for temporary files and search the ocr files		
-		
+		my $prefix=get_prefix( $filename ) ; 	
+		my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = stat( "$SCAN_DIR/$filename" );
+
 		# cut pdf file by page
 		if( system( "/usr/bin/pdfseparate '$SCAN_DIR/$filename' '${DIR_FOR_PAGES_OCR}/${prefix}_PAGE%d.pdf' >> $LOGDIR/pdfseparate.log" )!=0 ) {
 				w2log( "Cannot cut the file '$SCAN_DIR/$filename' to pages");
@@ -54,7 +50,7 @@ sub scan_dir {
 				my $pages=$#Pages+1;
 				$pages=0 unless( $pages); # if any error when get counter of pages			
 				my $dbh=db_connect() || w2log( "Cannot connect to database") ;
-				my $sql="insert into OCRFiles ( ffilename, fpages ) values( '$SCAN_DIR/$filename', $pages ) ;";
+				my $sql="insert into OCRFiles ( ffilename, fpages ) values( '$filename', $pages ) ; SELECT id FROM ocrfiles WHERE id = SCOPE_IDENTITY();";
 				eval {
 					my $sth = $dbh->prepare( $sql );
 					$sth->execute();
@@ -63,6 +59,10 @@ sub scan_dir {
 					w2log( "Error. Sql:$sql . Error: $@" );
 					return 0;
 				}		
+				eval {
+					if( my $row = $sth->fetchrow_hashref ) {		
+					print "Save files for record with id=$row->{id}\n";	
+				}
 				db_disconnect($dbh);
 			}			
 		} 

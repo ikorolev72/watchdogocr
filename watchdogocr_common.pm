@@ -185,4 +185,25 @@ sub get_prefix_page {
 	return ( $prefix, $page );
 }
 
+
+sub InsertRecord {
+	my $dbh=shift;
+	my $stmt=shift; # sql
+	my $row=shift; # data
+	#print Dumper( $row );
+	#print Dumper( $stmt );
+	#print Dumper( $Columns	);
+eval {
+	my $sth = $dbh->prepare( $stmt );
+	$sth->execute( @{$row} );
+};
+	if( $@ ){
+		w2log( "Error insert. Sql:$stmt . Error: $@" );
+		return 0;
+	}
+return ( 1 );	
+}
+
+
+
 1;
