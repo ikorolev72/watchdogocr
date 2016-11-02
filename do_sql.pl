@@ -29,6 +29,10 @@ my $dbh=db_connect();
 		w2log( "Error. Sql:$sql . Error: $@" );
 		exit 1;
 	}
+	if( my $row = $sth->fetchrow_hashref ) {
+		
+		print "Save files for record with id=$row->{id}\n";	
+	}
 	print "Done\n";
 	
 					

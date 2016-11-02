@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # korolev-ia [at] yandex.ru
-# version 1.1 2016.10.31
+# version 1.2 2016.11.02
 ##############################
 
 use lib "/home/directware/watchdogocr/"; 
@@ -47,9 +47,9 @@ sub scan_dir {
 		if( system( "/usr/bin/pdfseparate '$SCAN_DIR/$filename' '${DIR_FOR_PAGES_OCR}/${prefix}_PAGE%d.pdf' >> $LOGDIR/pdfseparate.log" )!=0 ) {
 				w2log( "Cannot cut the file '$SCAN_DIR/$filename' to pages");
 				unlink glob "${DIR_FOR_PAGES_OCR}/${prefix}_PAGE*.pdf"; 
+				rename( "$SCAN_DIR/$filename", "$DIR_FOR_FAILED_OCR/$filename" ) ;
 		} else {
 			if( rename( "$SCAN_DIR/$filename", "$DIR_FOR_FILES_IN_PROCESS/$filename" ) ) {
-				#my $pages=`/usr/bin/pdfinfo -meta '$SCAN_DIR/$filename' | grep ^Pages: | sed 's/^Pages: *//'` ; 
 				my @Pages=get_files_in_dir( $DIR_FOR_PAGES_OCR, "^${prefix}_PAGE\\d+\.pdf\$" );
 				my $pages=$#Pages+1;
 				$pages=0 unless( $pages); # if any error when get counter of pages			
@@ -64,7 +64,6 @@ sub scan_dir {
 					return 0;
 				}		
 				db_disconnect($dbh);
-				#scan_page_dir( $filename ) ;
 			}			
 		} 
 	}
@@ -73,7 +72,6 @@ sub scan_dir {
 
 
 sub scan_page_dir {	
-	#my $filename_master=shift;
 	my @scan_dir_running_ocr=get_files_in_dir( $DIR_FOR_RUNNING_OCR , "^$CHECK_FILE_MASK\$" );
 	my @scan_dir_for_pages_ocr=get_files_in_dir( $DIR_FOR_PAGES_OCR , "^$CHECK_FILE_MASK\$" );
 	if( $#scan_dir_for_pages_ocr < 0 ) {
@@ -81,19 +79,15 @@ sub scan_page_dir {
 	}
 
 	my $counter=$#scan_dir_running_ocr;
-	print "## $#scan_dir_running_ocr ## $#scan_dir_for_pages_ocr \n";
+	#print "## $#scan_dir_running_ocr ## $#scan_dir_for_pages_ocr \n";
 	foreach $filename( @scan_dir_for_pages_ocr ) {
-#		if ( $filename=~/([\w|\s]+)_PAGE(\d+)\.pdf$/ ) {
-		if ( $filename=~/$CHECK_FILE_MASK_PAGE$/ ) {
-			my $filename_master="$1.pdf";		
-			my $page=$2;
-			$page=1 unless( $page );
+		if ( $filename=~/([\w|\s]+)_PAGE(\d+)\.pdf$/ ) {
 			if( $counter++ > $MAX_FILES_IN_OCR_QUEUE ) {
 				last;
 			}
 			if( rename( "$DIR_FOR_PAGES_OCR/$filename", "$DIR_FOR_RUNNING_OCR/$filename" ) ) {
-				#system( "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename' --master='$filename_master' --page=$page > '$LOGDIR/$filename.ocr.log' 2>&1 &");
-				print "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename' --master='$filename_master' --page=$page > '$LOGDIR/$filename.ocr.log' 2>&1 &\n";
+				system( "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove > '$LOGDIR/$filename.ocr.log' 2>&1 &");
+				#print "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename' --remove > '$LOGDIR/$filename.ocr.log' 2>&1 &\n";
 			} else {
 				w2log( "Cannot rename file '$DIR_FOR_PAGES_OCR/$filename' to '$DIR_FOR_RUNNING_OCR/$filename': $!");
 				return 0;

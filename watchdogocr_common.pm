@@ -1,4 +1,6 @@
-# Config file for check_logs utilite
+# Config file for watchdog ocr utilite
+# korolev-ia [at] yandex.ru
+# version 1.2 2016.11.02
 #
 #
 use Data::Dumper;
@@ -6,7 +8,6 @@ use Getopt::Long;
 use DBI;
 use lib "/home/directware/perl5/lib/perl5/x86_64-linux-gnu-thread-multi/"; 
 use DBD::ODBC;
-#use Encode::Encoder qw(encoder);
 use XML::Simple;
 use JSON::XS;
 use File::Basename;
@@ -26,14 +27,15 @@ $WORKING_DIR = getcwd();
 $SCAN_INTERVAL=60; 
 
 
-# Dir for 'redirecti scanned error lines'
+# 
 $LOGDIR="$WORKING_DIR/var/log";
 $TMPDIR="$WORKING_DIR/var/tmp";
 $WATCHDOGOCR_FILE="$WORKING_DIR/watchdogocr_file.pl";
 
-# log file for errors with check_logs script ( eg 'cannot open file', etc)
+# log file for errors
 $LOGFILE="$LOGDIR/".basename($0).".log";
 
+# scan new pdf files
 $SCAN_DIR='/home/directware/docs/in';
 $DIR_FOR_FILES_IN_PROCESS="$SCAN_DIR/process";
 $DIR_FOR_PAGES_OCR="$SCAN_DIR/pages";
@@ -43,7 +45,8 @@ $DIR_FOR_FAILED_OCR="$SCAN_DIR/failed";
 
 $LAST_SCANED_TIME_DB="$WORKING_DIR/var/last_scaned_time_dir0.txt" ;
 $CHECK_FILE_MASK='([\w|\s]+)(?<!_ocr)\.pdf';
-$CHECK_FILE_MASK_PAGE='([\w|\s]+)_PAGE(\d+)\.pdf';
+$CHECK_FILE_MASK_OCR='([\w|\s]+_ocr)\.pdf';
+$CHECK_FILE_MASK_PAGE='([\w|\s]+)(_PAGE)(\d+)';
 $MAX_FILES_IN_OCR_QUEUE=3;
 
 
@@ -160,5 +163,26 @@ sub get_files_in_dir {
 	return @ls;
 }
 
+
+sub get_prefix {
+	my $filename=shift;
+	my $prefix='';	
+	if( $filename=~/^$CHECK_FILE_MASK$/ ) {
+		$prefix=$1;
+	}	
+	return ( $prefix );
+}
+
+
+sub get_prefix_page {
+	my $filename=shift;
+	my $prefix='';	
+	my $page=0;	
+	if( $filename=~/^$CHECK_FILE_MASK_PAGE/ ) {
+		$prefix=$1;
+		$page=$3;
+	}
+	return ( $prefix, $page );
+}
 
 1;

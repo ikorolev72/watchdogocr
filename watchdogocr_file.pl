@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # korolev-ia [at] yandex.ru
-# version 1.1 2016.10.31
+# version 1.2 2016.11.02
 ##############################
 
 
@@ -9,8 +9,7 @@ use watchdogocr_common;
 
 GetOptions (
         'filename|f=s' => \$filename,
-        'master|m=s' => \$filename_master,
-        'page|p=i' => \$page,
+        'remove|r' => \$remove_original,
         "help|h|?"  => \$help ) or show_help();
 
 show_help() if($help);
@@ -26,17 +25,17 @@ unless( -f $filename && -r $filename ) {
 
 my $filename_pdf=basename( $filename );
 my $dir=dirname( $filename );
-$filename_pdf=~/^$CHECK_FILE_MASK$/;
-my $prefix=$1; # for temporary files and search the ocr files
+
+my $prefix=get_prefix( $filename_pdf );
 my $filename_ocr="${prefix}_ocr.pdf";
 
-my $filename_master=$filename_pdf;
-my $page=1;
-if( $filename_pdf=~/$CHECK_FILE_MASK_PAGE$/ ) {
-	$filename_master="$1.pdf";		
-	$page=$2;	
-}
+my ( $prefix_master , $page )=get_prefix_page( $filename_pdf );
 
+my $filename_master=$filename_pdf;
+$filename_master="${prefix_master}.pdf" if( $page ) ;		
+
+
+#print "$filename_pdf # $filename_ocr # $page # $filename_master\n";
 
 if( ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix ) ) {
 	w2log( "File $dir/$filename_ocr ocr succesfully");
@@ -47,25 +46,28 @@ if( ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix ) ) {
 		w2log( "Cannot insert record into database");
 	}
 	db_disconnect($dbh);
-	#
 
-	unless( rename( "$DIR_FOR_FILES_IN_PROCESS/$filename_master", "$DIR_FOR_FINISHED_OCR/$filename_master" ) ) {
-		w2log( "Cannot rename file '$filename_master' to '$DIR_FOR_FINISHED_OCR/$filename_master': $!");
-	}
-	unlink "$filename" ;
 	unlink "$dir/$filename_ocr" ;
+	if( $remove_original ) {
+		unlink "$filename";
+		unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;
+	}
 } else {
 	w2log( "Error while ocr file $dir/$filename_ocr");
-	unless( rename( "$DIR_FOR_FILES_IN_PROCESS/$filename_master", "$DIR_FOR_FAILED_OCR/$filename_master" ) ) {
-		w2log( "Cannot rename file '$filename_master' to '$DIR_FOR_FAILED_OCR/$filename_master': $!");
+	unless( rename( $filename, "$DIR_FOR_FAILED_OCR/$filename_pdf" ) ) {
+		w2log( "Cannot rename file '$filename' to '$DIR_FOR_FAILED_OCR/$filename_pdf': $!");
 	}
-	unlink "$filename" ;
+
 	unlink "$dir/$filename_ocr";
+	#unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;	
 	# do someting , eg email to admin
 	exit(1);
 }
 
 exit(0);
+
+
+
 
 
 sub ocr_file {
@@ -77,10 +79,6 @@ sub ocr_file {
 		w2log( "Error while ocr file '$filename'");
 		return 0;
 	}
-	#$filename=~/^$CHECK_FILE_MASK$/;
-	#my $prefix=$1; # for temporary files and search the ocr files
-	#my $filename_ocr="${prefix}_ocr.pdf";
-
 
 	unless( -r "$dir/$filename_ocr" ) {
 		w2log( "File '$dir/$filename_ocr' do not exist (or not readable)"); 
@@ -127,14 +125,7 @@ sub insert_record_into_database {
 	my $rv;	
 	eval {
 		$sth = $dbh->prepare( $sql );
-		$rv = $sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilenamem, $fpage  );
-#		$sth->bind_param(1, $EntryTime);		
-#		$sth->bind_param(2, $ftext, DBI::SQL_LONGVARCHAR);		
-#		$sth->bind_param(3, $fjson, DBI::SQL_LONGVARCHAR);		
-#		$sth->bind_param(4, $fhtml, DBI::SQL_LONGVARCHAR);		
-#		$sth->bind_param(5, $fxml, DBI::SQL_LONGVARCHAR);		
-#		$sth->bind_param(6, $ffilename);
-#		$sth->execute()
+		$rv = $sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilename, $fpage  );
 	};
 
 	if( $@ ){
@@ -144,21 +135,17 @@ sub insert_record_into_database {
 	return 1;
 }
 	
+	
 
-
-					
 sub show_help {
 print STDERR "
-ocr one file. Usualy used for ocr one page ( master file cuted by pages )
-Usage: $0  --filename=filename --master=filename_of_master --page=page_number [--help]
+ocr one file. 
+Usage: $0  --filename=filename [ --remove ] [--help]
 where:
 filename - pdf file with absolute path for ocr
-master - master pdf file with absolute path
-page - page number 
+--remove - remove original pdf file if ocr is successfull
 Sample:
-$0 --filename=/dir/filename_PAGE6.pdf --master=/dir/filename.pdf --page=6
-if file do not cutted by pages
-$0 --filename=/dir/filename.pdf --master=/dir/filename.pdf --page=1
+$0 --filename=/dir/filename_PAGE6.pdf --remove
 ";
 	exit (1);
 }					
