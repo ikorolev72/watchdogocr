@@ -34,7 +34,8 @@ $WATCHDOGOCR_FILE="$WORKING_DIR/watchdogocr_file.pl";
 # log file for errors with check_logs script ( eg 'cannot open file', etc)
 $LOGFILE="$LOGDIR/".basename($0).".log";
 
-$SCAN_DIR='/home/directware/docs';
+$SCAN_DIR='/home/directware/docs/in';
+$DIR_FOR_FILES_IN_PROCESS="$SCAN_DIR/process";
 $DIR_FOR_PAGES_OCR="$SCAN_DIR/pages";
 $DIR_FOR_RUNNING_OCR="$SCAN_DIR/running";
 $DIR_FOR_FINISHED_OCR="$SCAN_DIR/finished";
@@ -42,7 +43,7 @@ $DIR_FOR_FAILED_OCR="$SCAN_DIR/failed";
 
 $LAST_SCANED_TIME_DB="$WORKING_DIR/var/last_scaned_time_dir0.txt" ;
 $CHECK_FILE_MASK='([\w|\s]+)(?<!_ocr)\.pdf';
-
+$CHECK_FILE_MASK_PAGE='([\w|\s]+)_PAGE(\d+)\.pdf';
 $MAX_FILES_IN_OCR_QUEUE=3;
 
 
@@ -146,6 +147,17 @@ sub xml2json {
 		my $coder = JSON::XS->new->utf8->pretty->allow_nonref; # bugs with JSON module and threads. we need use JSON::XS
 		my $json = $coder->encode ($ref);
         return $json;
+}
+
+sub get_files_in_dir {
+	my $dir=shift;
+	my $mask=shift;
+	$mask='^.+$' unless( $mask );
+	my @ls;
+	opendir(DIR, $dir) || w2log( "can't opendir $dir: $!" );
+		@ls = reverse sort grep { /^$mask$/ && -f "$dir/$_" } readdir(DIR);
+	closedir DIR;
+	return @ls;
 }
 
 

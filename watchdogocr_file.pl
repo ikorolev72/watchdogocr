@@ -8,12 +8,14 @@ use lib "/home/directware/watchdogocr/";
 use watchdogocr_common;
 
 GetOptions (
-        'filename|f' => \$filename,
+        'filename|f=s' => \$filename,
+        'master|m=s' => \$filename_master,
+        'page|p=i' => \$page,
         "help|h|?"  => \$help ) or show_help();
 
 show_help() if($help);
 
-unless( $filename ) {
+unless( $filename || $filename_master || $page ) {
 	show_help();
 }
 
@@ -23,20 +25,44 @@ unless( -f $filename && -r $filename ) {
 }
 
 my $filename_pdf=basename( $filename );
-my $dir=dirname($filename);
+my $dir=dirname( $filename );
+$filename_pdf=~/^$CHECK_FILE_MASK$/;
+my $prefix=$1; # for temporary files and search the ocr files
+my $filename_ocr="${prefix}_ocr.pdf";
 
-if( ocr_file( $dir, $filename_pdf ) ) {
-	w2log( "File $dir/$filename ocr succesfully");
-	unless( rename( "$dir/$filename_pdf", "$DIR_FOR_FINISHED_OCR/$filename_pdf" ) ){
-		w2log( "Cannot move file '$dir/$filename_pdf' to '$DIR_FOR_FINISHED_OCR/$filename_pdf'");	
+my $filename_master=$filename_pdf;
+my $page=1;
+if( $filename_pdf=~/$CHECK_FILE_MASK_PAGE$/ ) {
+	$filename_master="$1.pdf";		
+	$page=$2;	
+}
+
+
+if( ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix ) ) {
+	w2log( "File $dir/$filename_ocr ocr succesfully");
+
+	# 
+	my $dbh=db_connect() || w2log( "Cannot connect to database");
+	unless( insert_record_into_database( $dbh, $filename_master, $prefix, $page ) ) {
+		w2log( "Cannot insert record into database");
 	}
+	db_disconnect($dbh);
+	#
+
+	unless( rename( "$DIR_FOR_FILES_IN_PROCESS/$filename_master", "$DIR_FOR_FINISHED_OCR/$filename_master" ) ) {
+		w2log( "Cannot rename file '$filename_master' to '$DIR_FOR_FINISHED_OCR/$filename_master': $!");
+	}
+	unlink "$filename" ;
+	unlink "$dir/$filename_ocr" ;
 } else {
-	w2log( "Error while ocr file $dir/$filename");
-	unless( rename( "$dir/$filename_pdf", "$DIR_FOR_FAILED_OCR/$filename_pdf" )  ){
-		w2log( "Cannot move file '$dir/$filename_pdf' to '$DIR_FOR_FAILED_OCR/$filename_pdf'");	
+	w2log( "Error while ocr file $dir/$filename_ocr");
+	unless( rename( "$DIR_FOR_FILES_IN_PROCESS/$filename_master", "$DIR_FOR_FAILED_OCR/$filename_master" ) ) {
+		w2log( "Cannot rename file '$filename_master' to '$DIR_FOR_FAILED_OCR/$filename_master': $!");
 	}
-	exit(1);
+	unlink "$filename" ;
+	unlink "$dir/$filename_ocr";
 	# do someting , eg email to admin
+	exit(1);
 }
 
 exit(0);
@@ -45,48 +71,37 @@ exit(0);
 sub ocr_file {
 	my $dir=shift;	
 	my $filename=shift;	
+	my $filename_ocr=shift;	
+	my $prefix=shift;	
 	if( system( "/usr/local/bin/pypdfocr '$dir/$filename' >>$LOGDIR/pypdfocr.log 2>&1" )!=0 ) {
 		w2log( "Error while ocr file '$filename'");
 		return 0;
 	}
-	$filename=~/^([\w|\s]+)_ocr.pdf$/;
-	my $prefix=$1; # for temporary files and search the ocr files
-	my $filename_ocr="$dir/${prefix}_ocr.pdf";
+	#$filename=~/^$CHECK_FILE_MASK$/;
+	#my $prefix=$1; # for temporary files and search the ocr files
+	#my $filename_ocr="${prefix}_ocr.pdf";
 
-	unless( -r $filename_ocr ) {
-		w2log( "File $filename_ocr do not exist (or not readable)"); 
+
+	unless( -r "$dir/$filename_ocr" ) {
+		w2log( "File '$dir/$filename_ocr' do not exist (or not readable)"); 
 		return 0;
 	}
-# "/usr/local/bin/pdf2txt.py -D auto -V -t text" 
 	
 	my $filename_tmp="$TMPDIR/$prefix.txt";	
-	if( system( "/usr/local/bin/pdf2txt.py -o '$filename_tmp' -t text '$filename_ocr' >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
+	if( system( "/usr/local/bin/pdf2txt.py -o '$filename_tmp' -t text '$dir/$filename_ocr' >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
 		w2log( "Error while convert file '$dir/$filename' to text");
 		return 0;		
 	}
 	my $filename_tmp="$TMPDIR/$prefix.xml";	
-	if( system( "/usr/local/bin/pdf2txt.py -o '$filename_tmp' -t xml '$filename_ocr' >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
+	if( system( "/usr/local/bin/pdf2txt.py -o '$filename_tmp' -t xml '$dir/$filename_ocr' >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
 		w2log( "Error while convert file '$dir/$filename' to xml");
 		return 0;		
 	}
 	my $filename_tmp="$TMPDIR/$prefix.html";	
-	if( system( "/usr/local/bin/pdf2txt.py -o '$filename_tmp' -t html '$filename_ocr' >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
+	if( system( "/usr/local/bin/pdf2txt.py -o '$filename_tmp' -t html '$dir/$filename_ocr' >>$LOGDIR/pdf2txt.py.log 2>&1" )!=0 ) {
 		w2log( "Error while convert file '$dir/$filename' to html");
 		return 0;		
 	}
-
-	my $dbh=db_connect();
-	unless( $dbh ) {
-		w2log( "Cannot connect to database");
-		db_disconnect($dbh);
-		return 0;				
-	}
-	unless( insert_record_into_database( $dbh, "$dir/$filename", $prefix ) ) {
-		w2log( "Cannot insert record into database");
-		db_disconnect($dbh);
-		return 0;				
-	}
-	db_disconnect($dbh);
 	return 1;
 }
 
@@ -97,13 +112,7 @@ sub insert_record_into_database {
 	my $dbh=shift;
 	my $ffilename=shift;
 	my $prefix=shift;
-	
-	#id        
-	#EntryTime 
-	#ftext     
-	#fjson     
-	#fxml      
-	#ffilename	
+	my $fpage=shift;
 	
 
 	###########
@@ -112,31 +121,20 @@ sub insert_record_into_database {
 	my $fxml=ReadFile( "$TMPDIR/$prefix.xml" );
 	my $fhtml=ReadFile( "$TMPDIR/$prefix.html" );
 	my $fjson=xml2json( $fxml ) ;
-	
-#		$ftext=encoder($ftext)->utf8->latin1;
-#		$fxml=encoder($fxml)->utf8->latin1;
-#		$fhtml=encoder($fhtml)->utf8->latin1;
-		
-		#print "fhtml:". substr( $fhtml, 0, 255)."\n" ;
-		#print "fxml:". substr( $fxml, 0, 255)."\n" ;
-		#print "ftxt:". substr( $ftext, 0, 255)."\n" ;
-		#$ftext=substr( $ftext, 0, 14330);
-		#$ftext=$dbh->quote( $ftext );
-		
 
-	my $sql="insert into OCREntries ( EntryTime,ftext,fjson,fhtml,fxml,ffilename ) values(  ?, ?, ?, ?, ?, ? ) ;";
+	my $sql="insert into OCREntries ( EntryTime,ftext,fjson,fhtml,fxml,ffilename, fpage ) values(  ?, ?, ?, ?, ?, ?, ? ) ;";
 	my $sth;
 	my $rv;	
 	eval {
 		$sth = $dbh->prepare( $sql );
-		#$rv = $sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilename  );
-		$sth->bind_param(1, $EntryTime);		
-		$sth->bind_param(2, $ftext, DBI::SQL_LONGVARCHAR);		
-		$sth->bind_param(3, $fjson, DBI::SQL_LONGVARCHAR);		
-		$sth->bind_param(4, $fhtml, DBI::SQL_LONGVARCHAR);		
-		$sth->bind_param(5, $fxml, DBI::SQL_LONGVARCHAR);		
-		$sth->bind_param(6, $ffilename);
-		$sth->execute()
+		$rv = $sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilenamem, $fpage  );
+#		$sth->bind_param(1, $EntryTime);		
+#		$sth->bind_param(2, $ftext, DBI::SQL_LONGVARCHAR);		
+#		$sth->bind_param(3, $fjson, DBI::SQL_LONGVARCHAR);		
+#		$sth->bind_param(4, $fhtml, DBI::SQL_LONGVARCHAR);		
+#		$sth->bind_param(5, $fxml, DBI::SQL_LONGVARCHAR);		
+#		$sth->bind_param(6, $ffilename);
+#		$sth->execute()
 	};
 
 	if( $@ ){
@@ -151,12 +149,16 @@ sub insert_record_into_database {
 					
 sub show_help {
 print STDERR "
-ocr one file
-Usage: $0  --filename=filename [--help]
+ocr one file. Usualy used for ocr one page ( master file cuted by pages )
+Usage: $0  --filename=filename --master=filename_of_master --page=page_number [--help]
 where:
-filename - pdf file with absolute path
+filename - pdf file with absolute path for ocr
+master - master pdf file with absolute path
+page - page number 
 Sample:
-$0 --filename=/dir/filename.pdf
+$0 --filename=/dir/filename_PAGE6.pdf --master=/dir/filename.pdf --page=6
+if file do not cutted by pages
+$0 --filename=/dir/filename.pdf --master=/dir/filename.pdf --page=1
 ";
 	exit (1);
 }					
