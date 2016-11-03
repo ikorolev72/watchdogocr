@@ -45,8 +45,8 @@ $DIR_FOR_FAILED_OCR="$SCAN_DIR/failed";
 
 $LAST_SCANED_TIME_DB="$WORKING_DIR/var/last_scaned_time_dir0.txt" ;
 $CHECK_FILE_MASK='([\w|\s]+)(?<!_ocr)\.pdf';
-$CHECK_FILE_MASK_OCR='([\w|\s]+_ocr)\.pdf';
-$CHECK_FILE_MASK_PAGE='([\w|\s]+)(_PAGE)(\d+)';
+#$CHECK_FILE_MASK_OCR='([\w|\s]+_ocr)\.pdf';
+$CHECK_FILE_MASK_PAGE='([\w|\s]+)_ID(\d+)_PAGE(\d+)';
 $MAX_FILES_IN_OCR_QUEUE=3;
 
 
@@ -112,7 +112,7 @@ sub ReadFile {
 	my $filename=shift;
 	my $ret="";
 #	open (IN,"<:encoding(UTF-8)","$filename") || w2log("Can't open file $filename") ;
-	open (IN,"$filename") || w2log("Can't open file $filename") ;
+	open (IN,"'$filename'") || w2log("Can't open file '$filename'") ;
 		binmode(IN);
 		while (<IN>) { $ret.=$_; }
 	close (IN);
@@ -141,7 +141,8 @@ sub AppendFile {
 sub xml2json {
         my $xml=shift;
 		my $ref;
-        eval { $ref=XMLin( $xml,  ForceArray=>0 , ForceContent =>0 , KeyAttr => 1, KeepRoot => 1, SuppressEmpty => '' ) } ;
+		eval { $ref=XMLin( $xml,  ForceArray=>1 , ForceContent =>0 , KeyAttr => 1, KeepRoot => 1, SuppressEmpty => '' ) } ;
+        #eval { $ref=parse_string( $xml,  ForceArray=>1 , ForceContent =>0 , KeyAttr => 1, KeepRoot => 1, SuppressEmpty => '' ) } ;
                 if($@) {
                         w2log ( "XML file $filename error: $@" );
                         return( undef );
@@ -178,11 +179,13 @@ sub get_prefix_page {
 	my $filename=shift;
 	my $prefix='';	
 	my $page=0;	
+	my $id=0;
 	if( $filename=~/^$CHECK_FILE_MASK_PAGE/ ) {
 		$prefix=$1;
+		$id=$2;
 		$page=$3;
 	}
-	return ( $prefix, $page );
+	return ( $prefix, $page, $id );
 }
 
 
@@ -190,13 +193,11 @@ sub InsertRecord {
 	my $dbh=shift;
 	my $stmt=shift; # sql
 	my $row=shift; # data
-	#print Dumper( $row );
-	#print Dumper( $stmt );
-	#print Dumper( $Columns	);
-eval {
-	my $sth = $dbh->prepare( $stmt );
-	$sth->execute( @{$row} );
-};
+
+	eval {
+		my $sth = $dbh->prepare( $stmt );
+		$sth->execute( @{$row} );
+	};
 	if( $@ ){
 		w2log( "Error insert. Sql:$stmt . Error: $@" );
 		return 0;
@@ -204,6 +205,45 @@ eval {
 return ( 1 );	
 }
 
+sub UpdateRecord {
+	my $dbh=shift;
+	my $id=shift;
+	my $table=shift;
+	my $row=shift;
+	my @Val=();
+	my @Col=();
+	foreach $key ( keys %{ $row }) {
+		push ( @Col," $key = ? " ) ;
+		push ( @Val, $row->{$key} ) ;
+	}
+		push ( @Val, $id ) ;
+	my $stmt ="UPDATE $table set " . join(',',@Col ). " where id=?  ";
+	eval {
+		my $sth = $dbh->prepare( $stmt );
+		$sth->execute( @Val );
+	};
+	if( $@ ){
+		w2log( "Error update. Sql:$stmt . Error: $@" );
+		return 0;
+	}	
+	return ( 1 );	
+}
+
+sub DeleteRecord {
+	my $dbh=shift;
+	my $id=shift;
+	my $table=shift;
+	my $stmt ="DELETE FROM $table WHERE id = ? ; ";
+	eval {
+		my $sth = $dbh->prepare( $stmt );
+		$sth->execute( $id );
+	};
+	if( $@ ){
+		w2log( "Error delete record. Sql:$stmt . Error: $@" );
+		return 0;
+	}	
+	return 1;
+}
 
 
 1;

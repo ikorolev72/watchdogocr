@@ -29,7 +29,7 @@ my $dir=dirname( $filename );
 my $prefix=get_prefix( $filename_pdf );
 my $filename_ocr="${prefix}_ocr.pdf";
 
-my ( $prefix_master , $page )=get_prefix_page( $filename_pdf );
+my ( $prefix_master , $page, $id )=get_prefix_page( $filename_pdf );
 
 my $filename_master=$filename_pdf;
 $filename_master="${prefix_master}.pdf" if( $page ) ;		
@@ -42,7 +42,7 @@ if( ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix ) ) {
 
 	# 
 	my $dbh=db_connect() || w2log( "Cannot connect to database");
-	unless( insert_record_into_database( $dbh, $filename_master, $prefix, $page ) ) {
+	unless( insert_record_into_database( $dbh, $filename_master, $prefix ) ) {
 		w2log( "Cannot insert record into database");
 	}
 	db_disconnect($dbh);
@@ -50,7 +50,7 @@ if( ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix ) ) {
 	unlink "$dir/$filename_ocr" ;
 	if( $remove_original ) {
 		unlink "$filename";
-		unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;
+		#unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;
 	}
 } else {
 	w2log( "Error while ocr file $dir/$filename_ocr");
@@ -108,24 +108,25 @@ sub ocr_file {
 
 sub insert_record_into_database {
 	my $dbh=shift;
-	my $ffilename=shift;
+	my $filename=shift;
 	my $prefix=shift;
-	my $fpage=shift;
-	
 
+	my ( $prefix_master , $fpage, $id )=get_prefix_page( $filename );	
+	my $ffilename="$prefix_master.pdf";
+	#print "$ffilename # $prefix # $fpage # $id\n";	
 	###########
 	my $EntryTime=get_date( ); # by default
-	my $ftext=ReadFile( "$TMPDIR/$prefix.txt" );	
-	my $fxml=ReadFile( "$TMPDIR/$prefix.xml" );
-	my $fhtml=ReadFile( "$TMPDIR/$prefix.html" );
+	my $ftext=ReadFile( "'$TMPDIR/$prefix.txt'" );	
+	my $fxml=ReadFile( "'$TMPDIR/$prefix.xml'" );
+	my $fhtml=ReadFile( "'$TMPDIR/$prefix.html'" );
 	my $fjson=xml2json( $fxml ) ;
 
-	my $sql="insert into OCREntries ( EntryTime,ftext,fjson,fhtml,fxml,ffilename, fpage ) values(  ?, ?, ?, ?, ?, ?, ? ) ;";
+	my $sql="insert into OCREntries ( EntryTime,ftext,fjson,fhtml,fxml,ffilename, fpage, ocrfiles_id ) values(  ?, ?, ?, ?, ?, ?, ?, ? ) ;";
 	my $sth;
 	my $rv;	
 	eval {
 		$sth = $dbh->prepare( $sql );
-		$rv = $sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilename, $fpage  );
+		$rv = $sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilename, $fpage, $id  );
 	};
 
 	if( $@ ){
