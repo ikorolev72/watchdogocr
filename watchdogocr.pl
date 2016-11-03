@@ -95,8 +95,11 @@ sub scan_page_dir {
 				last;
 			}
 			if( rename( "$DIR_FOR_PAGES_OCR/$filename", "$DIR_FOR_RUNNING_OCR/$filename" ) ) {
-				system( "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/${prefix_master}_${id}.log' 2>&1 &");
-				#print "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/${prefix_master}_${id}.log' 2>&1 &\n";
+				if( $DEBUG==2 ) {
+					print "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/${prefix_master}_${id}.log' 2>&1 &\n";
+				} else {
+					system( "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/${prefix_master}_${id}.log' 2>&1 &");
+				}
 			} else {
 				w2log( "Cannot rename file '$DIR_FOR_PAGES_OCR/$filename' to '$DIR_FOR_RUNNING_OCR/$filename': $!");
 				return 0;

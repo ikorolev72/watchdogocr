@@ -38,7 +38,7 @@ my ( undef , $page, $id )=get_prefix_page( $filename_pdf );
 
 if( ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix ) ) {
 	my $dbh=db_connect() || w2log( "Cannot connect to database");
-	if( insert_record_into_database( $dbh, $id, $prefix ) ) {
+	if( insert_record_into_database( $dbh, $id, $prefix, $page ) ) {
 		db_disconnect($dbh);
 		unlink "$dir/$filename_ocr" ;
 		if( $remove ) {
@@ -104,11 +104,13 @@ sub insert_record_into_database {
 	my $dbh=shift;
 	my $id=shift;
 	my $prefix=shift;
+	my $fpage=shift || 0;
+	
 
 	my $ffilename='';
 	my $sql="select ffilename from ocrfiles where id=?;";
-	my $sth;
 	eval {
+		my $sth;
 		$sth = $dbh->prepare( $sql );
 		$sth->execute( $id  );
 		if( my $row = $sth->fetchrow_hashref ) {		
@@ -121,14 +123,16 @@ sub insert_record_into_database {
 		return 0;
 	}
 	
-	my $EntryTime=get_date( ); # by default
+	my $EntryTime=get_date(); # by default
 	my $ftext=ReadFile( "$TMPDIR/$prefix.txt" );	
 	my $fxml=ReadFile( "$TMPDIR/$prefix.xml" );
 	my $fhtml=ReadFile( "$TMPDIR/$prefix.html" );
 	my $fjson=xml2json( $fxml ) ;
 
+	#print "$EntryTime , $ftext , $fjson , $fhtml , $fxml , $ffilename , $fpage , $id #";
+	#return 1;
 	my $sql="insert into OCREntries ( EntryTime,ftext,fjson,fhtml,fxml,ffilename, fpage, ocrfiles_id ) values(  ?, ?, ?, ?, ?, ?, ?, ? ) ;";
-	my $sth;
+
 #	my $sql="insert into ocrentries ( EntryTime, ftext, fjson, fhtml, fxml, ffilename, fpage, ocrfiles_id ) 
 #				select 
 #				? as EntryTime, 
@@ -140,8 +144,8 @@ sub insert_record_into_database {
 #				? as fpage,
 #				? as ocrfiles_id from ocrfiles where id=? ;";
 	eval {
-		$sth = $dbh->prepare( $sql );
-		$sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilename, $fpage, $id  );
+		my $sth = $dbh->prepare( $sql );
+		$sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilename, $fpage, $id  );		
 	};
 
 	if( $@ ){

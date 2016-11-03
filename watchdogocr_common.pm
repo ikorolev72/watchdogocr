@@ -15,7 +15,7 @@ use Cwd;
 
 # if $DEBUG=1 then print all messages to stderr.
 # if $DEBUG=0 then write messages only to $LOGFILE
-$DEBUG=1;
+$DEBUG=2;
 
 # main working dir
 chdir ( dirname($0) );
