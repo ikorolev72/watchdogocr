@@ -3,7 +3,7 @@
 # version 1.2 2016.11.02
 #
 #
-use Data::Dumper;
+#use Data::Dumper;
 use Getopt::Long;
 use DBI;
 use lib "/home/directware/perl5/lib/perl5/x86_64-linux-gnu-thread-multi/"; 
@@ -15,7 +15,7 @@ use Cwd;
 
 # if $DEBUG=1 then print all messages to stderr.
 # if $DEBUG=0 then write messages only to $LOGFILE
-$DEBUG=2;
+$DEBUG=1;
 
 # main working dir
 chdir ( dirname($0) );
@@ -24,7 +24,7 @@ $WORKING_DIR = getcwd();
 
 
 # check new files every $SCAN_INTERVAL ( in seconds ) for daemon mode
-$SCAN_INTERVAL=60; 
+$SCAN_INTERVAL=30; 
 
 
 # 
@@ -47,7 +47,7 @@ $LAST_SCANED_TIME_DB="$WORKING_DIR/var/last_scaned_time_dir0.txt" ;
 $CHECK_FILE_MASK='([\w|\s]+)(?<!_ocr)\.pdf';
 #$CHECK_FILE_MASK_OCR='([\w|\s]+_ocr)\.pdf';
 $CHECK_FILE_MASK_PAGE='([\w|\s]+)_ID(\d+)_PAGE(\d+)';
-$MAX_FILES_IN_OCR_QUEUE=3;
+$MAX_FILES_IN_OCR_QUEUE=4; # in real this value+2 . 4 mean 6 jobs
 
 
 # db settings
@@ -62,15 +62,23 @@ $MAX_FILES_IN_OCR_QUEUE=3;
 	
 	
 sub db_connect {
-	my $dbh = DBI->connect( @DB_CONNECTION,  {
-		PrintError       => 0,
-		RaiseError       => 1,
-		AutoCommit       => 1,
-		FetchHashKeyName => 'NAME_lc',
-		# we will set buffer for strings to 50mb
-		LongReadLen => 50000000, 
-	}) ; 
-
+	my $dbh;
+	for( 1..5 ) {
+		eval {
+		$dbh = DBI->connect( @DB_CONNECTION,  {
+			PrintError       => 0,
+			RaiseError       => 1,
+			AutoCommit       => 1,
+			FetchHashKeyName => 'NAME_lc',
+			# we will set buffer for strings to 50mb
+			LongReadLen => 50000000, 
+		}) ; 
+		};
+		if( $dbh ) {
+			return $dbh;
+		}
+		sleep 2;
+	}
 	unless( $dbh ) {
 		w2log( "Cannot connect to database: $!") ;
 		return 0;

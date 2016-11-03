@@ -43,7 +43,7 @@ if( ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix ) ) {
 		unlink "$dir/$filename_ocr" ;
 		if( $remove ) {
 			unlink "$filename";
-			#unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;
+			unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;
 		}
 		w2log( "File $dir/$filename_ocr ocr succesfully");
 	}
@@ -56,9 +56,8 @@ w2log( "Error while ocr file $dir/$filename_ocr");
 unless( rename( $filename, "$DIR_FOR_FAILED_OCR/$filename_pdf" ) ) {
 	w2log( "Cannot rename file '$filename' to '$DIR_FOR_FAILED_OCR/$filename_pdf': $!");
 }
-
 unlink "$dir/$filename_ocr";
-#unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;	
+unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;	
 # do someting , eg email to admin
 exit(1);
 

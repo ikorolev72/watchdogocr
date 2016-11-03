@@ -29,8 +29,9 @@ if( $daemon ) {
 exit(0);
 
 
-# this function scan dir,  loking for new pdf-file, cut this file to pages
 sub scan_dir {	
+	# this function scan dir,  loking for new pdf-file, cut this file to pages
+	# insert into database info about this file
 	my @scan_dir_files=get_files_in_dir( $SCAN_DIR, "^$CHECK_FILE_MASK\$" );
 	if( $#scan_dir_files < 0 ) {
 		return 1;
@@ -80,6 +81,8 @@ sub scan_dir {
 
 
 sub scan_page_dir {	
+	# scen dir with 'one page' pdf files
+	# and run jobs
 	my @scan_dir_running_ocr=get_files_in_dir( $DIR_FOR_RUNNING_OCR , "^$CHECK_FILE_MASK\$" );
 	my @scan_dir_for_pages_ocr=get_files_in_dir( $DIR_FOR_PAGES_OCR , "^$CHECK_FILE_MASK\$" );
 	if( $#scan_dir_for_pages_ocr < 0 ) {
@@ -87,7 +90,6 @@ sub scan_page_dir {
 	}
 
 	my $counter=$#scan_dir_running_ocr;
-	#print "## $#scan_dir_running_ocr ## $#scan_dir_for_pages_ocr \n";
 	foreach $filename( sort @scan_dir_for_pages_ocr ) {
 		my ( $prefix_master, $page, $id )=get_prefix_page( $filename);
 		if ( $id ) {
@@ -95,11 +97,13 @@ sub scan_page_dir {
 				last;
 			}
 			if( rename( "$DIR_FOR_PAGES_OCR/$filename", "$DIR_FOR_RUNNING_OCR/$filename" ) ) {
-				if( $DEBUG==2 ) {
-					print "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/${prefix_master}_${id}.log' 2>&1 &\n";
-				} else {
-					system( "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/${prefix_master}_${id}.log' 2>&1 &");
-				}
+				my $cmd="$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/${prefix_master}_${id}.log' 2>&1 &";
+				if( $DEBUG>0 ) {
+					print "$cmd\n";
+				} 
+				if( $DEBUG<2 ) {
+					system( $cmd );
+				} 
 			} else {
 				w2log( "Cannot rename file '$DIR_FOR_PAGES_OCR/$filename' to '$DIR_FOR_RUNNING_OCR/$filename': $!");
 				return 0;
