@@ -37,36 +37,41 @@ sub scan_dir {
 	}
 	my $dbh=db_connect() || w2log( "Cannot connect to database") ;
 	foreach $filename ( @scan_dir_files ) {		
-		my $prefix=get_prefix( $filename ) ; 	
-		#my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = stat( "$SCAN_DIR/$filename" );
-				my $sql="insert into OCRFiles ( ffilename, fpages ) OUTPUT Inserted.ID values( '$filename', 0 ) ;";
-				my $id=0;
-				eval {
-					my $sth = $dbh->prepare( $sql );
-					$sth->execute();
-					if( my $row = $sth->fetchrow_hashref ) {
-						$id=$row->{id};
-					}
-				};
-				if( $@ ){
-					w2log( "Error. Sql:$sql . Error: $@" );
-					db_disconnect($dbh);
-					return 0;
-				}		
+		my $sql="insert into OCRFiles ( ffilename, fpages ) OUTPUT Inserted.ID values( '$filename', 0 ) ;";
+		my $id=0;
+		eval {
+			my $sth = $dbh->prepare( $sql );
+			$sth->execute();
+			if( my $row = $sth->fetchrow_hashref ) {
+				$id=$row->{id};
+			}
+		};
+		if( $@ ){
+			w2log( "Error. Sql:$sql . Error: $@" );
+			db_disconnect($dbh);
+			return 0;
+		}		
 
 		# cut pdf file by page
-		if( system( "/usr/bin/pdfseparate '$SCAN_DIR/$filename' '${DIR_FOR_PAGES_OCR}/${prefix}_ID${id}_PAGE%d.pdf' >> $LOGDIR/pdfseparate.log" )!=0 ) {
+		my $dt=time();
+		if( system( "/usr/bin/pdfseparate '$SCAN_DIR/$filename' '${DIR_FOR_PAGES_OCR}/${dt}_ID${id}_PAGE%d.pdf' >> $LOGDIR/pdfseparate.log" )!=0 ) {
 				w2log( "Cannot cut the file '$SCAN_DIR/$filename' to pages");
-				unlink glob "${DIR_FOR_PAGES_OCR}/${prefix}_PAGE*.pdf"; 
+				unlink glob "${DIR_FOR_PAGES_OCR}/${dt}_PAGE*.pdf"; 
 				rename( "$SCAN_DIR/$filename", "$DIR_FOR_FAILED_OCR/$filename" ) ;
 				DeleteRecord( $dbh, $id, 'OCRFiles' );
 		} else {
 			if( rename( "$SCAN_DIR/$filename", "$DIR_FOR_FILES_IN_PROCESS/$filename" ) ) {
-				my @Pages=get_files_in_dir( $DIR_FOR_PAGES_OCR, "^${prefix}_ID${id}_PAGE\\d+\.pdf\$" );
+				my @Pages=get_files_in_dir( $DIR_FOR_PAGES_OCR, "^${dt}_ID${id}_PAGE\\d+\.pdf\$" );
 				my $row;
 				$row->{fpages}=$#Pages+1;				
 				UpdateRecord( $dbh, $id, 'OCRFiles', $row ) ;
-			}			
+			} else {
+				# if this file left in scaning folder, then it may go to ocr queue again
+				w2log( "Cannot rename file '$SCAN_DIR/$filename' to 'DIR_FOR_FILES_IN_PROCESS/$filename': $!");				
+				unlink glob "${DIR_FOR_PAGES_OCR}/${dt}_PAGE*.pdf"; 
+				rename( "$SCAN_DIR/$filename", "$DIR_FOR_FAILED_OCR/$filename" ) ;
+				DeleteRecord( $dbh, $id, 'OCRFiles' );
+			}					
 		} 
 	}
 	db_disconnect($dbh);
@@ -83,15 +88,15 @@ sub scan_page_dir {
 
 	my $counter=$#scan_dir_running_ocr;
 	#print "## $#scan_dir_running_ocr ## $#scan_dir_for_pages_ocr \n";
-	foreach $filename( @scan_dir_for_pages_ocr ) {
-		my ( $prefix, $page, $id )=get_prefix_page( $filename);
+	foreach $filename( sort @scan_dir_for_pages_ocr ) {
+		my ( $prefix_master, $page, $id )=get_prefix_page( $filename);
 		if ( $id ) {
 			if( $counter++ > $MAX_FILES_IN_OCR_QUEUE ) {
 				last;
 			}
 			if( rename( "$DIR_FOR_PAGES_OCR/$filename", "$DIR_FOR_RUNNING_OCR/$filename" ) ) {
-				system( "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/$prefix_$id.log' 2>&1 &");
-				#print "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/$prefix_$id.log' 2>&1 &\n";
+				system( "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/${prefix_master}_${id}.log' 2>&1 &");
+				#print "$WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/${prefix_master}_${id}.log' 2>&1 &\n";
 			} else {
 				w2log( "Cannot rename file '$DIR_FOR_PAGES_OCR/$filename' to '$DIR_FOR_RUNNING_OCR/$filename': $!");
 				return 0;

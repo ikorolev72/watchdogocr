@@ -9,17 +9,17 @@ use watchdogocr_common;
 
 GetOptions (
         'filename|f=s' => \$filename,
-        'remove|r' => \$remove_original,
+        'remove|r' => \$remove,
         "help|h|?"  => \$help ) or show_help();
 
 show_help() if($help);
 
-unless( $filename || $filename_master || $page ) {
+unless( $filename  ) {
 	show_help();
 }
 
 unless( -f $filename && -r $filename ) {
-	w2log( "File $filename must be regular file and redable ") ;
+	w2log( "File $filename must be regular file and readable ") ;
 	show_help();
 }
 
@@ -29,44 +29,38 @@ my $dir=dirname( $filename );
 my $prefix=get_prefix( $filename_pdf );
 my $filename_ocr="${prefix}_ocr.pdf";
 
-my ( $prefix_master , $page, $id )=get_prefix_page( $filename_pdf );
-
-my $filename_master=$filename_pdf;
-$filename_master="${prefix_master}.pdf" if( $page ) ;		
+my ( undef , $page, $id )=get_prefix_page( $filename_pdf );
+	
 
 
 #print "$filename_pdf # $filename_ocr # $page # $filename_master\n";
 
+
 if( ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix ) ) {
-	w2log( "File $dir/$filename_ocr ocr succesfully");
-
-	# 
 	my $dbh=db_connect() || w2log( "Cannot connect to database");
-	unless( insert_record_into_database( $dbh, $filename_master, $prefix ) ) {
-		w2log( "Cannot insert record into database");
+	if( insert_record_into_database( $dbh, $id, $prefix ) ) {
+		db_disconnect($dbh);
+		unlink "$dir/$filename_ocr" ;
+		if( $remove ) {
+			unlink "$filename";
+			#unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;
+		}
+		w2log( "File $dir/$filename_ocr ocr succesfully");
 	}
-	db_disconnect($dbh);
+	exit 0;
+} 
 
-	unlink "$dir/$filename_ocr" ;
-	if( $remove_original ) {
-		unlink "$filename";
-		#unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;
-	}
-} else {
-	w2log( "Error while ocr file $dir/$filename_ocr");
-	unless( rename( $filename, "$DIR_FOR_FAILED_OCR/$filename_pdf" ) ) {
-		w2log( "Cannot rename file '$filename' to '$DIR_FOR_FAILED_OCR/$filename_pdf': $!");
-	}
-
-	unlink "$dir/$filename_ocr";
-	#unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;	
-	# do someting , eg email to admin
-	exit(1);
+#################
+# if any error
+w2log( "Error while ocr file $dir/$filename_ocr");
+unless( rename( $filename, "$DIR_FOR_FAILED_OCR/$filename_pdf" ) ) {
+	w2log( "Cannot rename file '$filename' to '$DIR_FOR_FAILED_OCR/$filename_pdf': $!");
 }
 
-exit(0);
-
-
+unlink "$dir/$filename_ocr";
+#unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;	
+# do someting , eg email to admin
+exit(1);
 
 
 
@@ -108,25 +102,46 @@ sub ocr_file {
 
 sub insert_record_into_database {
 	my $dbh=shift;
-	my $filename=shift;
+	my $id=shift;
 	my $prefix=shift;
 
-	my ( $prefix_master , $fpage, $id )=get_prefix_page( $filename );	
-	my $ffilename="$prefix_master.pdf";
-	#print "$ffilename # $prefix # $fpage # $id\n";	
-	###########
+	my $ffilename='';
+	my $sql="select ffilename from ocrfiles where id=?;";
+	my $sth;
+	eval {
+		$sth = $dbh->prepare( $sql );
+		$sth->execute( $id  );
+		if( my $row = $sth->fetchrow_hashref ) {		
+			$ffilename=$row->{ffilename};	
+		}
+	};
+
+	if( $@ ){
+		w2log( "Error. Sql:$sql . Error: $@" );
+		return 0;
+	}
+	
 	my $EntryTime=get_date( ); # by default
-	my $ftext=ReadFile( "'$TMPDIR/$prefix.txt'" );	
-	my $fxml=ReadFile( "'$TMPDIR/$prefix.xml'" );
-	my $fhtml=ReadFile( "'$TMPDIR/$prefix.html'" );
+	my $ftext=ReadFile( "$TMPDIR/$prefix.txt" );	
+	my $fxml=ReadFile( "$TMPDIR/$prefix.xml" );
+	my $fhtml=ReadFile( "$TMPDIR/$prefix.html" );
 	my $fjson=xml2json( $fxml ) ;
 
 	my $sql="insert into OCREntries ( EntryTime,ftext,fjson,fhtml,fxml,ffilename, fpage, ocrfiles_id ) values(  ?, ?, ?, ?, ?, ?, ?, ? ) ;";
 	my $sth;
-	my $rv;	
+#	my $sql="insert into ocrentries ( EntryTime, ftext, fjson, fhtml, fxml, ffilename, fpage, ocrfiles_id ) 
+#				select 
+#				? as EntryTime, 
+#				? as ftext, 
+#				? as fjson,
+#				? as fhtml,
+#				? as fxml,
+#				ffilename,
+#				? as fpage,
+#				? as ocrfiles_id from ocrfiles where id=? ;";
 	eval {
 		$sth = $dbh->prepare( $sql );
-		$rv = $sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilename, $fpage, $id  );
+		$sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilename, $fpage, $id  );
 	};
 
 	if( $@ ){

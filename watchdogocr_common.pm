@@ -111,8 +111,7 @@ sub w2log {
 sub ReadFile {
 	my $filename=shift;
 	my $ret="";
-#	open (IN,"<:encoding(UTF-8)","$filename") || w2log("Can't open file $filename") ;
-	open (IN,"'$filename'") || w2log("Can't open file '$filename'") ;
+	open (IN,"$filename") || w2log("Can't open file '$filename' for read") ;
 		binmode(IN);
 		while (<IN>) { $ret.=$_; }
 	close (IN);
