@@ -56,7 +56,12 @@ w2log( "Error while ocr file $dir/$filename_ocr");
 unless( rename( $filename, "$DIR_FOR_FAILED_OCR/$filename_pdf" ) ) {
 	w2log( "Cannot rename file '$filename' to '$DIR_FOR_FAILED_OCR/$filename_pdf': $!");
 }
-unlink "$dir/$filename_ocr";
+
+# remove all temporary files like ZZZ_ocr.pdf, ZZZ_text.pdf text_ZZZ.pdf
+unlink glob "${dir}/${prefix}_*text.pdf"; 
+unlink glob "${dir}/${prefix}_*ocr.pdf"; 
+unlink glob "${dir}/text_${prefix}_*.pdf"; 
+#unlink "$dir/$filename_ocr";
 unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;	
 # do someting , eg email to admin
 exit(1);

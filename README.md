@@ -72,7 +72,7 @@ There three ways to run:
    ```
 *	*	*	*	*	/home/directware/watchdogocr/watchdogocr.pl >/dev/null 2>&1
    ```
-   3. From command line as daemon. Run ```/home/directware/watchdogocr/watchdogocr.pl --daemon &```
+   3. From command line as daemon. Run ```/home/directware/watchdogocr/watchdogocr.pl --daemon >/dev/null 2>&1 &```
    
 Put your pdf files into directory `/home/directware/docs/in`. After this watchdogocr will start processing your files during 30 seconds.
 Processing files moved into `/home/directware/docs/in/process`, faled files moved into `/home/directware/docs/in/failed`. 

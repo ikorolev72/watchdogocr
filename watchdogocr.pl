@@ -69,7 +69,7 @@ sub scan_dir {
 			} else {
 				# if this file left in scaning folder, then it may go to ocr queue again
 				w2log( "Cannot rename file '$SCAN_DIR/$filename' to 'DIR_FOR_FILES_IN_PROCESS/$filename': $!");				
-				unlink glob "${DIR_FOR_PAGES_OCR}/${dt}_PAGE*.pdf"; 
+				unlink glob "${DIR_FOR_PAGES_OCR}/${dt}_ID*_PAGE*.pdf"; 
 				rename( "$SCAN_DIR/$filename", "$DIR_FOR_FAILED_OCR/$filename" ) ;
 				DeleteRecord( $dbh, $id, 'OCRFiles' );
 			}					
