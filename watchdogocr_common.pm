@@ -24,7 +24,7 @@ $WORKING_DIR = getcwd();
 
 
 # check new files every $SCAN_INTERVAL ( in seconds ) for daemon mode
-$SCAN_INTERVAL=30; 
+$SCAN_INTERVAL=20; 
 
 
 # 
@@ -44,10 +44,9 @@ $DIR_FOR_FINISHED_OCR="$SCAN_DIR/finished";
 $DIR_FOR_FAILED_OCR="$SCAN_DIR/failed";
 
 $LAST_SCANED_TIME_DB="$WORKING_DIR/var/last_scaned_time_dir0.txt" ;
-$CHECK_FILE_MASK='([\w|\s]+)(?<!_ocr)\.pdf';
-#$CHECK_FILE_MASK_OCR='([\w|\s]+_ocr)\.pdf';
-$CHECK_FILE_MASK_PAGE='([\w|\s]+)_ID(\d+)_PAGE(\d+)';
-$MAX_FILES_IN_OCR_QUEUE=4; # in real this value+2 . 4 mean 6 jobs
+$CHECK_FILE_MASK='([-|\w|\s]+)(?<!_ocr)(?<!_text)\.pdf';
+$CHECK_FILE_MASK_PAGE='([-|\w|\s]+)_ID(\d+)_PAGE(\d+)';
+$MAX_FILES_IN_OCR_QUEUE=6; # in real this value+1 . 4 mean 5 jobs
 
 
 # db settings
