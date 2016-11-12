@@ -35,9 +35,20 @@ sub scan_dir {
 	my @scan_dir_files=get_files_in_dir( $SCAN_DIR, "^$CHECK_FILE_MASK\$" );
 	if( $#scan_dir_files < 0 ) {
 		return 1;
-	}
+	}	
 	my $dbh=db_connect() || w2log( "Cannot connect to database") ;
 	foreach $filename ( @scan_dir_files ) {		
+		# check if file uploaded to dir in
+		# for this we try open file "for append"
+		if( -f "$SCAN_DIR/$filename" && -r "$SCAN_DIR/$filename" && -w "$SCAN_DIR/$filename") {
+			eval{
+				unless( open( FILE_READY,  ">>$SCAN_DIR/$filename" ) ) {
+					close( FILE_READY );
+					next;
+				}
+				close( FILE_READY );
+			}; 
+		}
 		my $sql="insert into OCRFiles ( ffilename, fpages ) OUTPUT Inserted.ID values( '$filename', 0 ) ;";
 		my $id=0;
 		eval {
@@ -55,12 +66,7 @@ sub scan_dir {
 
 		# cut pdf file by page
 		my $dt=time();
-		if( system( "/usr/bin/pdfseparate '$SCAN_DIR/$filename' '${DIR_FOR_PAGES_OCR}/${dt}_ID${id}_PAGE%d.pdf' >> $LOGDIR/pdfseparate.log" )!=0 ) {
-				w2log( "Cannot cut the file '$SCAN_DIR/$filename' to pages");
-				unlink glob "${DIR_FOR_PAGES_OCR}/${dt}_PAGE*.pdf"; 
-				rename( "$SCAN_DIR/$filename", "$DIR_FOR_FAILED_OCR/$filename" ) ;
-				DeleteRecord( $dbh, $id, 'OCRFiles' );
-		} else {
+		if( system( "/usr/bin/pdfseparate '$SCAN_DIR/$filename' '${DIR_FOR_PAGES_OCR}/${dt}_ID${id}_PAGE%d.pdf' >> $LOGDIR/pdfseparate.log" )==0 ) {
 			if( rename( "$SCAN_DIR/$filename", "$DIR_FOR_FILES_IN_PROCESS/$filename" ) ) {
 				my @Pages=get_files_in_dir( $DIR_FOR_PAGES_OCR, "^${dt}_ID${id}_PAGE\\d+\.pdf\$" );
 				my $row;
@@ -73,6 +79,39 @@ sub scan_dir {
 				rename( "$SCAN_DIR/$filename", "$DIR_FOR_FAILED_OCR/$filename" ) ;
 				DeleteRecord( $dbh, $id, 'OCRFiles' );
 			}					
+		} else {
+				w2log( "Cannot cut the entire file '$SCAN_DIR/$filename' to pages");
+				w2log( "Try cut the file '$SCAN_DIR/$filename' for one page");
+				unlink glob "${DIR_FOR_PAGES_OCR}/${dt}_ID*_PAGE*.pdf"; 
+
+				my $pages_in_pdf=`"/usr/bin/pdfinfo -meta '$SCAN_DIR/$filename'  | grep ^Pages: | sed 's/^Pages: *//'"`;
+				$pages_in_pdf=~s/\D//g;
+				unless( $pages_in_pdf ){
+					w2log( "Cannot count the pages in pdf file '$SCAN_DIR/$filename'. Cannot processing this file.");				
+					unlink glob "${DIR_FOR_PAGES_OCR}/${dt}_ID*_PAGE*.pdf"; 
+					rename( "$SCAN_DIR/$filename", "$DIR_FOR_FAILED_OCR/$filename" ) ;
+					DeleteRecord( $dbh, $id, 'OCRFiles' );	
+					return 0;
+				}
+				my $processed_page=0;
+				for $page ( 1..$pages_in_pdf) {
+					# if problems with pdfseparate, then 
+					# will try separate by one page and ignore errors
+					if( system( "/usr/bin/pdfseparate '$SCAN_DIR/$filename' -f $page -l $page '${DIR_FOR_PAGES_OCR}/${dt}_ID${id}_PAGE%d.pdf' >> $LOGDIR/pdfseparate.log" )==0 ){
+						$processed_page++;
+					} else{
+						w2log( "Cannot cut the page $page from file '$SCAN_DIR/$filename'");
+					}
+					# start working page process
+					scan_page_dir();
+				}
+				unless( $processed_page ) {
+				# brocken file, nothing to help
+					w2log( "Cannot rename file '$SCAN_DIR/$filename' to 'DIR_FOR_FILES_IN_PROCESS/$filename': $!");				
+					unlink glob "${DIR_FOR_PAGES_OCR}/${dt}_ID*_PAGE*.pdf"; 
+					rename( "$SCAN_DIR/$filename", "$DIR_FOR_FAILED_OCR/$filename" ) ;
+					DeleteRecord( $dbh, $id, 'OCRFiles' );					
+				}
 		} 
 	}
 	db_disconnect($dbh);
