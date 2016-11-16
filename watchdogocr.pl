@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # korolev-ia [at] yandex.ru
-# version 1.2 2016.11.02
+# version 1.3 2016.11.16
 ##############################
 
 use lib "/home/directware/watchdogocr/"; 
@@ -19,14 +19,60 @@ if( $daemon ) {
 	while( 1 ) {
 		scan_dir();
 		scan_page_dir();
+		check_finished_ocr();
 		sleep( $SCAN_INTERVAL );
 	}
 } else {
 		scan_dir();
 		scan_page_dir();
+		check_finished_ocr();
 }
 
 exit(0);
+
+
+sub check_finished_ocr {
+	# check if all pages of pdf docs finished ( or failed )
+	my $dbh=db_connect() ;
+	unless( $dbh ) {
+		w2log( "Cannot connect to database") ;
+		return 0;
+	}
+	my $sql="select id from ocrfiles where fstatus='added' ";
+	eval {
+		my $sth = $dbh->prepare( $sql );
+		$sth->execute( );
+	};
+	if( $@ ){
+		w2log( "Cannot select record. Sql:$sql . Error: $@" );
+		db_disconnect($dbh);		
+		return 0;
+	}
+	while( my $row=$sth->fetchrow_hashref ) {
+		my $sql="select count(*) as cnt from ocrentries where pstatus in ( 'failed', 'finished' ) and ocrfiles_id=? ";
+		eval {
+			my $sth = $dbh->prepare( $sql );
+			$sth->execute( $row->{id} );
+		};
+		if( $@ ){
+			w2log( "Cannot select record. Sql:$sql . Error: $@" );
+			db_disconnect($dbh);			
+			return 0;
+		}
+		my $nrow=$sth->fetchrow_hashref ;
+		if( $nrow->{cnt} == $row->{pages} ) {
+				my $srow;
+				$srow->{status}='finished';	
+				UpdateRecord( $dbh, $row->{id}, 'OCRFiles', $srow ) ;
+				w2log( "Processing of file $row->{ffilename} finished successfully");				
+				unless( rename( "$DIR_FOR_FILES_IN_PROCESS/$row->{ffilename}", "$DIR_FOR_FINISHED_OCR/$row->{ffilename}" ) ) {
+					w2log( "Cannot rename file '$DIR_FOR_FILES_IN_PROCESS/$row->{ffilename}' to '$DIR_FOR_FINISHED_OCR/$row->{ffilename}': $!");				
+				}				
+		}
+	}
+	db_disconnect($dbh);			
+	return 1;	
+}
 
 
 sub scan_dir {	
@@ -38,31 +84,37 @@ sub scan_dir {
 	}	
 	my $dbh=db_connect() || w2log( "Cannot connect to database") ;
 	foreach $filename ( @scan_dir_files ) {		
-		# check if file uploaded to dir in
-		# for this we try open file "for append"
-		if( -f "$SCAN_DIR/$filename" && -r "$SCAN_DIR/$filename" && -w "$SCAN_DIR/$filename") {
-			eval{
-				unless( open( FILE_READY,  ">>$SCAN_DIR/$filename" ) ) {
-					close( FILE_READY );
-					next;
-				}
-				close( FILE_READY );
-			}; 
+
+		# check if file uploaded to dir - we check the size of this file
+		# if size changed, then try process next file
+		my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = stat( "$SCAN_DIR/$filename" );
+		my $size0=$size;
+		sleep 10;
+		my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = stat( "$SCAN_DIR/$filename" );
+		if( $size != $size0 ) {
+			next;
 		}
-		my $sql="insert into OCRFiles ( ffilename, fpages ) OUTPUT Inserted.ID values( '$filename', 0 ) ;";
-		my $id=0;
-		eval {
-			my $sth = $dbh->prepare( $sql );
-			$sth->execute();
-			if( my $row = $sth->fetchrow_hashref ) {
-				$id=$row->{id};
-			}
-		};
-		if( $@ ){
-			w2log( "Error. Sql:$sql . Error: $@" );
-			db_disconnect($dbh);
-			return 0;
-		}		
+		#
+		my $row;
+		$row->{ffilename}=$filename;
+		$row->{fpages}=0 ;
+		$row->{fstatus}='added';
+		my $id=InsertRecord( $dbh, 'OCRFiles', $row );	
+		
+#		my $sql="insert into OCRFiles ( ffilename, fpages, fstatus ) OUTPUT Inserted.ID values( '$filename', 0, 'added' ) ;";
+#		my $id=0;
+#		eval {
+#			my $sth = $dbh->prepare( $sql );
+#			$sth->execute();
+#			if( my $row = $sth->fetchrow_hashref ) {
+#				$id=$row->{id};
+#			}
+#		};
+#		if( $@ ){
+#			w2log( "Error. Sql:$sql . Error: $@" );
+#			db_disconnect($dbh);
+#			return 0;
+#		}		
 
 		# cut pdf file by page
 		my $dt=time();
@@ -71,7 +123,22 @@ sub scan_dir {
 				my @Pages=get_files_in_dir( $DIR_FOR_PAGES_OCR, "^${dt}_ID${id}_PAGE\\d+\.pdf\$" );
 				my $row;
 				$row->{fpages}=$#Pages+1;				
+				$row->{status}='running';
 				UpdateRecord( $dbh, $id, 'OCRFiles', $row ) ;
+				
+				my @scan_dir_for_pages_ocr=get_files_in_dir( $DIR_FOR_PAGES_OCR , "^${dt}_ID${id}_PAGE\d+\.pdf\$" );
+				
+				foreach my $pagename ( sort @scan_dir_for_pages_ocr ) {
+					my ( undef , $page, undef )=get_prefix_page( $pagename );
+					my $row;
+					$row->{EntryTime}=get_date();
+					$row->{ffilename}=$pagename;
+					$row->{fpage}=$page ;
+					$row->{ocrfiles_id}=$id;
+					$row->{pstatus}='added';
+					InsertRecord( $dbh, 'OCREntries' , $row );						
+				}				
+				
 			} else {
 				# if this file left in scaning folder, then it may go to ocr queue again
 				w2log( "Cannot rename file '$SCAN_DIR/$filename' to 'DIR_FOR_FILES_IN_PROCESS/$filename': $!");				
@@ -80,6 +147,15 @@ sub scan_dir {
 				DeleteRecord( $dbh, $id, 'OCRFiles' );
 			}					
 		} else {
+				w2log( "Cannot cut the file '$SCAN_DIR/$filename' to pages");
+				my $row;
+				$row->{status}='failed';				
+				UpdateRecord( $dbh, $id, 'OCRFiles', $row ) ;
+				rename( "$SCAN_DIR/$filename", "$DIR_FOR_FAILED_OCR/$filename" ) ;				
+				unlink glob "${DIR_FOR_PAGES_OCR}/${dt}_ID*_PAGE*.pdf"; 
+
+				# cutting by page. not actual. prepare to remove
+				if( 0 ) {		
 				w2log( "Cannot cut the entire file '$SCAN_DIR/$filename' to pages");
 				w2log( "Try cut the file '$SCAN_DIR/$filename' for one page");
 				unlink glob "${DIR_FOR_PAGES_OCR}/${dt}_ID*_PAGE*.pdf"; 
@@ -93,6 +169,7 @@ sub scan_dir {
 					DeleteRecord( $dbh, $id, 'OCRFiles' );	
 					return 0;
 				}
+
 				my $processed_page=0;
 				for $page ( 1..$pages_in_pdf) {
 					# if problems with pdfseparate, then 
@@ -112,6 +189,7 @@ sub scan_dir {
 					rename( "$SCAN_DIR/$filename", "$DIR_FOR_FAILED_OCR/$filename" ) ;
 					DeleteRecord( $dbh, $id, 'OCRFiles' );					
 				}
+				}				
 		} 
 	}
 	db_disconnect($dbh);
@@ -119,8 +197,10 @@ sub scan_dir {
 }
 
 
+
+
 sub scan_page_dir {	
-	# scen dir with 'one page' pdf files
+	# scan dir with 'one page' pdf files
 	# and run jobs
 	my @scan_dir_running_ocr=get_files_in_dir( $DIR_FOR_RUNNING_OCR , "^$CHECK_FILE_MASK\$" );
 	my @scan_dir_for_pages_ocr=get_files_in_dir( $DIR_FOR_PAGES_OCR , "^$CHECK_FILE_MASK\$" );

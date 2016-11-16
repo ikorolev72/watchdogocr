@@ -1,6 +1,6 @@
 # Config file for watchdog ocr utilite
 # korolev-ia [at] yandex.ru
-# version 1.2 2016.11.02
+# version 1.3 2016.11.16
 #
 #
 #use Data::Dumper;
@@ -172,7 +172,7 @@ sub get_files_in_dir {
 
 
 sub get_prefix {
-	my $filename=shift;
+	my $filename=basename( shift );
 	my $prefix='';	
 	if( $filename=~/^$CHECK_FILE_MASK$/ ) {
 		$prefix=$1;
@@ -182,7 +182,7 @@ sub get_prefix {
 
 
 sub get_prefix_page {
-	my $filename=shift;
+	my $filename=basename( shift );
 	my $prefix='';	
 	my $page=0;	
 	my $id=0;
@@ -195,21 +195,52 @@ sub get_prefix_page {
 }
 
 
-sub InsertRecord {
+sub InsertRecord1 {
 	my $dbh=shift;
-	my $stmt=shift; # sql
+	my $sql=shift; # sql
 	my $row=shift; # data
 
 	eval {
-		my $sth = $dbh->prepare( $stmt );
+		my $sth = $dbh->prepare( $sql );
 		$sth->execute( @{$row} );
 	};
 	if( $@ ){
-		w2log( "Error insert. Sql:$stmt . Error: $@" );
+		w2log( "Error insert. Sql:$sql . Error: $@" );
 		return 0;
 	}
 return ( 1 );	
 }
+
+
+sub InsertRecord {
+	my $dbh=shift;
+	my $table=shift;
+	my $row=shift;
+	my @F;
+	my @V;
+	my @Q;
+	foreach( keys %{ $row }) {
+		push ( @F, $_ );
+		push (@V , $row->{$_} );
+		push ( @Q, '?');
+	}
+	
+	my $sql ="INSERT into $table ( ". join(',', @F). ") OUTPUT Inserted.ID  values ( ". join(',', @Q). " ) ;";
+	my $id=0;
+	eval {
+		my $sth = $dbh->prepare( $sql );
+		$sth->execute( @V );
+		if( my $row = $sth->fetchrow_hashref ) {
+			$id=$row->{id};
+		}		
+	};	
+	if( $@ ){
+		w2log( "Error insert. Sql:$sql . Error: $@" );
+		return 0;
+	}	
+	return ( $id );	
+}
+
 
 sub UpdateRecord {
 	my $dbh=shift;
@@ -223,13 +254,13 @@ sub UpdateRecord {
 		push ( @Val, $row->{$key} ) ;
 	}
 		push ( @Val, $id ) ;
-	my $stmt ="UPDATE $table set " . join(',',@Col ). " where id=?  ";
+	my $sql ="UPDATE $table set " . join(',',@Col ). " where id=?  ";
 	eval {
-		my $sth = $dbh->prepare( $stmt );
+		my $sth = $dbh->prepare( $sql );
 		$sth->execute( @Val );
 	};
 	if( $@ ){
-		w2log( "Error update. Sql:$stmt . Error: $@" );
+		w2log( "Error update. Sql:$sql . Error: $@" );
 		return 0;
 	}	
 	return ( 1 );	
@@ -239,16 +270,34 @@ sub DeleteRecord {
 	my $dbh=shift;
 	my $id=shift;
 	my $table=shift;
-	my $stmt ="DELETE FROM $table WHERE id = ? ; ";
+	my $sql ="DELETE FROM $table WHERE id = ? ; ";
 	eval {
-		my $sth = $dbh->prepare( $stmt );
+		my $sth = $dbh->prepare( $sql );
 		$sth->execute( $id );
 	};
 	if( $@ ){
-		w2log( "Error delete record. Sql:$stmt . Error: $@" );
+		w2log( "Error delete record. Sql:$sql . Error: $@" );
 		return 0;
 	}	
 	return 1;
+}
+
+sub GetRecord {
+	my $dbh=shift;
+	my $id=shift;
+	my $table=shift;
+	#my $fields=shift || '*';
+	my $sql ="SELECT * from $table where id = ? ;";
+	eval {
+		my $sth = $dbh->prepare( $sql );
+		$sth->execute( $id );
+	};
+	
+	if( $@ ){
+		w2log( "Cannot select record. Sql:$sql . Error: $@" );
+		return 0;
+	}	
+	return ( $sth->fetchrow_hashref );	
 }
 
 

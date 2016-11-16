@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # korolev-ia [at] yandex.ru
-# version 1.2 2016.11.02
+# version 1.3 2016.11.16
 ##############################
 
 
@@ -35,36 +35,61 @@ my ( undef , $page, $id )=get_prefix_page( $filename_pdf );
 
 #print "$filename_pdf # $filename_ocr # $page # $filename_master\n";
 
-
-if( ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix ) ) {
-	my $dbh=db_connect() || w2log( "Cannot connect to database");
-	if( insert_record_into_database( $dbh, $id, $prefix, $page ) ) {
-		db_disconnect($dbh);
+my $ocr_page_success=ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix );
+my $dbh=db_connect() || w2log( "Cannot connect to database");
+	my $sql='select id from OCREntries where ocrfiles_id=$id and page=$page' ;
+	my $page_id=0;
+	eval {
+		my $sth = $dbh->prepare( $sql );
+		$sth->execute( );
+		if( my $row = $sth->fetchrow_hashref ) {
+			$page_id=$row->{id};
+		}			
+	};	
+	if( $@ ){
+		w2log( "Cannot select record. Sql:$sql . Error: $@" );
+	}	
+	if( $ocr_page_success ) {
+		w2log( "File $dir/$filename_ocr ocr succesfully");	
+		my $row;
+		$row->{ftext}=ReadFile( "$TMPDIR/$prefix.txt" );
+		$row->{fxml}=ReadFile( "$TMPDIR/$prefix.xml" );
+		$row->{fhtml}=ReadFile( "$TMPDIR/$prefix.html" );
+		$row->{fjson}=xml2json( $fxml ) ;
+		$row->{pstatus}='finished';
+		UpdateRecord( $dbh, $page_id, 'OCREntries', $row ) ;		
+		
 		unlink "$dir/$filename_ocr" ;
 		if( $remove ) {
 			unlink "$filename";
 			unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;
 		}
-		w2log( "File $dir/$filename_ocr ocr succesfully");
+		
+	} else {
+		w2log( "Error while ocr file $dir/$filename_ocr");
+		my $row;
+		$row->{pstatus}='failed';
+		UpdateRecord( $dbh, $page_id, 'OCREntries', $row ) ;		
+	
+		unless( rename( $filename, "$DIR_FOR_FAILED_OCR/$filename_pdf" ) ) {
+			w2log( "Cannot rename file '$filename' to '$DIR_FOR_FAILED_OCR/$filename_pdf': $!");
+		}
+
+		# remove all temporary files like ZZZ_ocr.pdf, ZZZ_text.pdf text_ZZZ.pdf
+		unlink glob "${dir}/${prefix}_*text.pdf"; 
+		unlink glob "${dir}/${prefix}_*ocr.pdf"; 
+		unlink glob "${dir}/text_${prefix}_*.pdf"; 
+		#unlink "$dir/$filename_ocr";
+		unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;	
+		# do someting , eg email to admin
+		exit(1);		
 	}
-	exit 0;
-} 
+	
+db_disconnect($dbh);
+exit 0;
+	
 
-#################
-# if any error
-w2log( "Error while ocr file $dir/$filename_ocr");
-unless( rename( $filename, "$DIR_FOR_FAILED_OCR/$filename_pdf" ) ) {
-	w2log( "Cannot rename file '$filename' to '$DIR_FOR_FAILED_OCR/$filename_pdf': $!");
-}
 
-# remove all temporary files like ZZZ_ocr.pdf, ZZZ_text.pdf text_ZZZ.pdf
-unlink glob "${dir}/${prefix}_*text.pdf"; 
-unlink glob "${dir}/${prefix}_*ocr.pdf"; 
-unlink glob "${dir}/text_${prefix}_*.pdf"; 
-#unlink "$dir/$filename_ocr";
-unlink ( "$TMPDIR/$prefix.txt" ,  "$TMPDIR/$prefix.xml" ,"$TMPDIR/$prefix.html" ) ;	
-# do someting , eg email to admin
-exit(1);
 
 
 
@@ -104,61 +129,7 @@ sub ocr_file {
 
 
 
-sub insert_record_into_database {
-	my $dbh=shift;
-	my $id=shift;
-	my $prefix=shift;
-	my $fpage=shift || 0;
-	
 
-	my $ffilename='';
-	my $sql="select ffilename from ocrfiles where id=?;";
-	eval {
-		my $sth;
-		$sth = $dbh->prepare( $sql );
-		$sth->execute( $id  );
-		if( my $row = $sth->fetchrow_hashref ) {		
-			$ffilename=$row->{ffilename};	
-		}
-	};
-
-	if( $@ ){
-		w2log( "Error. Sql:$sql . Error: $@" );
-		return 0;
-	}
-	
-	my $EntryTime=get_date(); # by default
-	my $ftext=ReadFile( "$TMPDIR/$prefix.txt" );	
-	my $fxml=ReadFile( "$TMPDIR/$prefix.xml" );
-	my $fhtml=ReadFile( "$TMPDIR/$prefix.html" );
-	my $fjson=xml2json( $fxml ) ;
-
-	#print "$EntryTime , $ftext , $fjson , $fhtml , $fxml , $ffilename , $fpage , $id #";
-	#return 1;
-	my $sql="insert into OCREntries ( EntryTime,ftext,fjson,fhtml,fxml,ffilename, fpage, ocrfiles_id ) values(  ?, ?, ?, ?, ?, ?, ?, ? ) ;";
-
-#	my $sql="insert into ocrentries ( EntryTime, ftext, fjson, fhtml, fxml, ffilename, fpage, ocrfiles_id ) 
-#				select 
-#				? as EntryTime, 
-#				? as ftext, 
-#				? as fjson,
-#				? as fhtml,
-#				? as fxml,
-#				ffilename,
-#				? as fpage,
-#				? as ocrfiles_id from ocrfiles where id=? ;";
-	eval {
-		my $sth = $dbh->prepare( $sql );
-		$sth->execute( $EntryTime, $ftext, $fjson, $fhtml, $fxml, $ffilename, $fpage, $id  );		
-	};
-
-	if( $@ ){
-		w2log( "Error. Sql:$sql . Error: $@" );
-		return 0;
-	}
-	return 1;
-}
-	
 	
 
 sub show_help {
