@@ -37,7 +37,7 @@ my ( undef , $page, $id )=get_prefix_page( $filename_pdf );
 
 my $ocr_page_success=ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix );
 my $dbh=db_connect() || w2log( "Cannot connect to database");
-	my $sql='select id from OCREntries where ocrfiles_id=$id and page=$page' ;
+	my $sql="select id from OCREntries where ocrfiles_id=$id and fpage=$page" ;
 	my $page_id=0;
 	eval {
 		my $sth = $dbh->prepare( $sql );

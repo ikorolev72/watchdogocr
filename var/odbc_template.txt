@@ -1,0 +1,9 @@
+[MSSQLTestServer] 
+Driver = FreeTDS 
+Description = data.solutioncenter.biz 
+Trace = No 
+Server = data.solutioncenter.biz 
+Port = 1433 
+Database = Maintenance
+UID	= quickbooks
+PWD = pcgi21

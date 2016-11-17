@@ -44,8 +44,8 @@ $DIR_FOR_FINISHED_OCR="$SCAN_DIR/finished";
 $DIR_FOR_FAILED_OCR="$SCAN_DIR/failed";
 
 $LAST_SCANED_TIME_DB="$WORKING_DIR/var/last_scaned_time_dir0.txt" ;
-$CHECK_FILE_MASK='([-|\w|\s]+)(?<!_ocr)(?<!_text)\.pdf';
-$CHECK_FILE_MASK_PAGE='([-|\w|\s]+)_ID(\d+)_PAGE(\d+)';
+$CHECK_FILE_MASK='(.+)(?<!_ocr)(?<!_text)\.pdf';
+$CHECK_FILE_MASK_PAGE='(.+)_ID(\d+)_PAGE(\d+)';
 $MAX_FILES_IN_OCR_QUEUE=6; # in real this value+1 . 4 mean 5 jobs
 
 
@@ -199,9 +199,9 @@ sub InsertRecord1 {
 	my $dbh=shift;
 	my $sql=shift; # sql
 	my $row=shift; # data
-
+	my $sth;
 	eval {
-		my $sth = $dbh->prepare( $sql );
+		$sth = $dbh->prepare( $sql );
 		$sth->execute( @{$row} );
 	};
 	if( $@ ){
@@ -227,8 +227,9 @@ sub InsertRecord {
 	
 	my $sql ="INSERT into $table ( ". join(',', @F). ") OUTPUT Inserted.ID  values ( ". join(',', @Q). " ) ;";
 	my $id=0;
+	my $sth;
 	eval {
-		my $sth = $dbh->prepare( $sql );
+		$sth = $dbh->prepare( $sql );
 		$sth->execute( @V );
 		if( my $row = $sth->fetchrow_hashref ) {
 			$id=$row->{id};
@@ -255,8 +256,9 @@ sub UpdateRecord {
 	}
 		push ( @Val, $id ) ;
 	my $sql ="UPDATE $table set " . join(',',@Col ). " where id=?  ";
+	my $sth;
 	eval {
-		my $sth = $dbh->prepare( $sql );
+		$sth = $dbh->prepare( $sql );
 		$sth->execute( @Val );
 	};
 	if( $@ ){
@@ -271,8 +273,9 @@ sub DeleteRecord {
 	my $id=shift;
 	my $table=shift;
 	my $sql ="DELETE FROM $table WHERE id = ? ; ";
+	my $sth;
 	eval {
-		my $sth = $dbh->prepare( $sql );
+		$sth = $dbh->prepare( $sql );
 		$sth->execute( $id );
 	};
 	if( $@ ){
@@ -288,8 +291,9 @@ sub GetRecord {
 	my $table=shift;
 	#my $fields=shift || '*';
 	my $sql ="SELECT * from $table where id = ? ;";
+	my $sth;
 	eval {
-		my $sth = $dbh->prepare( $sql );
+		$sth = $dbh->prepare( $sql );
 		$sth->execute( $id );
 	};
 	
