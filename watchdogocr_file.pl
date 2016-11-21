@@ -37,28 +37,25 @@ my ( undef , $page, $id )=get_prefix_page( $filename_pdf );
 
 my $ocr_page_success=ocr_file( $dir, $filename_pdf, $filename_ocr, $prefix );
 my $dbh=db_connect() || w2log( "Cannot connect to database");
-	my $sql="select id from OCREntries where ocrfiles_id=$id and fpage=$page" ;
-	my $page_id=0;
-	eval {
-		my $sth = $dbh->prepare( $sql );
-		$sth->execute( );
-		if( my $row = $sth->fetchrow_hashref ) {
-			$page_id=$row->{id};
-		}			
-	};	
-	if( $@ ){
-		w2log( "Cannot select record. Sql:$sql . Error: $@" );
-	}	
+
 	if( $ocr_page_success ) {
 		w2log( "File $dir/$filename_ocr ocr succesfully");	
 		my $row;
 		$row->{ftext}=ReadFile( "$TMPDIR/$prefix.txt" );
 		$row->{fxml}=ReadFile( "$TMPDIR/$prefix.xml" );
 		$row->{fhtml}=ReadFile( "$TMPDIR/$prefix.html" );
-		$row->{fjson}=xml2json( $fxml ) ;
+		$row->{fjson}=xml2json( $row->{fxml} ) ;
 		$row->{pstatus}='finished';
-		UpdateRecord( $dbh, $page_id, 'OCREntries', $row ) ;		
 		
+		my $sql="update OCREntries set ftext=? , fjson=?, fhtml=?, fxml=?, pstatus='finished' where ocrfiles_id=? and fpage=?" ;
+		my $sth;
+		eval {
+			$sth = $dbh->prepare( $sql );
+			$sth->execute( $ftext, $fjson, $fhtml, $fxml, $id, $page  );
+		};			
+		if( $@ ){
+			w2log( "Cannot update record : id=$id, fpage=$page. Sql:$sql . Error: $@" );
+		}		
 		unlink "$dir/$filename_ocr" ;
 		if( $remove ) {
 			unlink "$filename";
@@ -67,9 +64,15 @@ my $dbh=db_connect() || w2log( "Cannot connect to database");
 		
 	} else {
 		w2log( "Error while ocr file $dir/$filename_ocr");
-		my $row;
-		$row->{pstatus}='failed';
-		UpdateRecord( $dbh, $page_id, 'OCREntries', $row ) ;		
+		my $sql="update OCREntries set pstatus='failed' where ocrfiles_id=? and fpage=?" ;
+		my $sth;
+		eval {
+			$sth = $dbh->prepare( $sql );
+			$sth->execute( $id, $page  );
+		};			
+		if( $@ ){
+			w2log( "Cannot update record : id=$id, fpage=$page. Sql:$sql . Error: $@" );
+		}		
 	
 		unless( rename( $filename, "$DIR_FOR_FAILED_OCR/$filename_pdf" ) ) {
 			w2log( "Cannot rename file '$filename' to '$DIR_FOR_FAILED_OCR/$filename_pdf': $!");

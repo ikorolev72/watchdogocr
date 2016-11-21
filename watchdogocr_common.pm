@@ -6,6 +6,7 @@
 #use Data::Dumper;
 use Getopt::Long;
 use DBI;
+use lib "/home/directware/perl5/lib/perl5/"; 
 use lib "/home/directware/perl5/lib/perl5/x86_64-linux-gnu-thread-multi/"; 
 use DBD::ODBC;
 use XML::Simple;
@@ -34,6 +35,7 @@ $WATCHDOGOCR_FILE="$WORKING_DIR/watchdogocr_file.pl";
 
 # log file for errors
 $LOGFILE="$LOGDIR/".basename($0).".log";
+$PIDFILE="$WORKING_DIR/var/watchdogocr.pid";
 
 # scan new pdf files
 $SCAN_DIR='/home/directware/docs/in';
@@ -46,7 +48,7 @@ $DIR_FOR_FAILED_OCR="$SCAN_DIR/failed";
 $LAST_SCANED_TIME_DB="$WORKING_DIR/var/last_scaned_time_dir0.txt" ;
 $CHECK_FILE_MASK='(.+)(?<!_ocr)(?<!_text)\.pdf';
 $CHECK_FILE_MASK_PAGE='(.+)_ID(\d+)_PAGE(\d+)';
-$MAX_FILES_IN_OCR_QUEUE=6; # in real this value+1 . 4 mean 5 jobs
+$MAX_FILES_IN_OCR_QUEUE=10; # in real this value+1 . 4 mean 5 jobs
 
 
 # db settings
@@ -256,6 +258,7 @@ sub UpdateRecord {
 	}
 		push ( @Val, $id ) ;
 	my $sql ="UPDATE $table set " . join(',',@Col ). " where id=?  ";
+	#print "$sql # @Col # @Val # $id \n";
 	my $sth;
 	eval {
 		$sth = $dbh->prepare( $sql );
