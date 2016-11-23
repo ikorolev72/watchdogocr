@@ -94,6 +94,8 @@ sub check_finished_ocr {
 		my $row=$Records{ $id };		
 		my $srow;
 		$srow->{fstatus}='finished';	
+		$srow->{mtime}=get_date();	
+		$srow->{fdesc}="Processing of file $row->{ffilename} finished successfully";														
 		UpdateRecord( $dbh, $id , 'OCRFiles', $srow ) ;
 		w2log( "Processing of file $row->{ffilename} finished successfully");				
 		unless( rename( "$DIR_FOR_FILES_IN_PROCESS/$row->{ffilename}", "$DIR_FOR_FINISHED_OCR/$row->{ffilename}" ) ) {
@@ -137,18 +139,21 @@ sub scan_dir {
 		if( rename( "$SCAN_DIR/$filename", "$DIR_FOR_FILES_IN_PROCESS/$filename" ) ) {
 			unless( system( "/usr/bin/pdfseparate '$DIR_FOR_FILES_IN_PROCESS/$filename' '${DIR_FOR_PAGES_OCR}/${dt}_ID${id}_PAGE%d.pdf' >> $LOGDIR/pdfseparate.log" )==0 ) {
 				w2log( "Cannot cut the file '$DIR_FOR_FILES_IN_PROCESS/$filename' to pages");
-				my $row;
-				$row->{fstatus}='failed';				
-				UpdateRecord( $dbh, $id, 'OCRFiles', $row ) ;
+				my $srow;
+				$srow->{fstatus}='failed';				
+				$srow->{mtime}=get_date();				
+				$srow->{fdesc}="Cannot cut the file '$DIR_FOR_FILES_IN_PROCESS/$filename' to pages";				
+				UpdateRecord( $dbh, $id, 'OCRFiles', $srow ) ;
 				rename( "$DIR_FOR_FILES_IN_PROCESS/$filename", "$DIR_FOR_FAILED_OCR/$filename" ) ;				
 				unlink glob "${DIR_FOR_PAGES_OCR}/${dt}_ID${id}_PAGE*.pdf"; 
 				next;
 			} 
 				my @Pages=get_files_in_dir( $DIR_FOR_PAGES_OCR, "^${dt}_ID${id}_PAGE\\d+\\.pdf\$" );
-				my $row;
-				$row->{fpages}=$#Pages+1;				
-				$row->{fstatus}='running';
-				UpdateRecord( $dbh, $id, 'OCRFiles', $row ) ;
+				my $srow;
+				$srow->{fpages}=$#Pages+1;				
+				$srow->{fstatus}='running';
+				$srow->{mtime}=get_date();		
+				UpdateRecord( $dbh, $id, 'OCRFiles', $srow ) ;
 				
 				my $file_mask="^${dt}_ID${id}_PAGE\\d+\.pdf\$" ;
 				my @scan_dir_for_pages_ocr=get_files_in_dir( $DIR_FOR_PAGES_OCR , $file_mask );
@@ -223,14 +228,10 @@ sub run_page_ocr {
 	my $dbh=db_connect() ;
 
 	my $sql="select top $MAX_FILES_IN_OCR_QUEUE id,ffilename from OCREntries where pstatus='added' order by id" ;
-	my $page_id=0;
 	my $sth;
 	eval {
 		$sth = $dbh->prepare( $sql );
 		$sth->execute( );
-		if( my $row = $sth->fetchrow_hashref ) {
-			$page_id=$row->{id};
-		}			
 	};	
 	if( $@ ){
 		w2log( "Cannot select record. Sql:$sql . Error: $@" );
@@ -254,6 +255,7 @@ sub run_page_ocr {
 			if( rename( "$DIR_FOR_PAGES_OCR/$filename", "$DIR_FOR_RUNNING_OCR/$filename" ) ) {
 				my $srow;		
 				$srow->{pstatus}='running';	
+				$srow->{mtime}=get_date();				
 				UpdateRecord( $dbh, $id , 'OCREntries', $srow ) ;
 				w2log( "Start processing of file $filename");			
 				my $cmd="/usr/bin/timeout 3600 $WATCHDOGOCR_FILE --filename='$DIR_FOR_RUNNING_OCR/$filename'  --remove >> '$LOGDIR/${prefix_master}_${id}.log' 2>&1 &";
@@ -271,6 +273,8 @@ sub run_page_ocr {
 				w2log( "Cannot rename file '$DIR_FOR_PAGES_OCR/$filename' to '$DIR_FOR_RUNNING_OCR/$filename': $!");
 				my $srow;		
 				$srow->{pstatus}='failed';	
+				$srow->{mtime}=get_date();		
+				$srow->{fdesc}="Cannot rename file '$DIR_FOR_PAGES_OCR/$filename' to '$DIR_FOR_RUNNING_OCR/$filename': $!";												
 				UpdateRecord( $dbh, $id , 'OCREntries', $srow ) ;
 				w2log( "Processing of file $filename failed");							
 			}

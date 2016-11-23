@@ -46,12 +46,14 @@ my $dbh=db_connect() || w2log( "Cannot connect to database");
 		$row->{fhtml}=ReadFile( "$TMPDIR/$prefix.html" );
 		$row->{fjson}=xml2json( $row->{fxml} ) ;
 		$row->{pstatus}='finished';
+		$row->{mtime}= get_date();
+		$row->{fdesc}="File $dir/$filename_ocr ocr succesfully";
 		
-		my $sql="update OCREntries set ftext=? , fjson=?, fhtml=?, fxml=?, pstatus='finished' where ocrfiles_id=? and fpage=?" ;
+		my $sql="update OCREntries set ftext=? , fjson=?, fhtml=?, fxml=?, mtime=?, fdesc=?, pstatus='finished' where ocrfiles_id=? and fpage=?" ;
 		my $sth;
 		eval {
 			$sth = $dbh->prepare( $sql );
-			$sth->execute( $ftext, $fjson, $fhtml, $fxml, $id, $page  );
+			$sth->execute( $row->{ftext}, $row->{fjson}, $row->{fhtml}, $row->{fxml}, $row->{mtime}, $row->{fdesc}, $id, $page  );
 		};			
 		if( $@ ){
 			w2log( "Cannot update record : id=$id, fpage=$page. Sql:$sql . Error: $@" );
@@ -64,11 +66,15 @@ my $dbh=db_connect() || w2log( "Cannot connect to database");
 		
 	} else {
 		w2log( "Error while ocr file $dir/$filename_ocr");
-		my $sql="update OCREntries set pstatus='failed' where ocrfiles_id=? and fpage=?" ;
+		my $sql="update OCREntries set pstatus='failed', mtime=?, fdesc=? where ocrfiles_id=? and fpage=?" ;
+		my $mtime= get_date();
+		my $fdesc="Error while ocr file $dir/$filename_ocr";		
+
 		my $sth;
+		
 		eval {
 			$sth = $dbh->prepare( $sql );
-			$sth->execute( $id, $page  );
+			$sth->execute( $mtime, $fdesc, $id, $page  );
 		};			
 		if( $@ ){
 			w2log( "Cannot update record : id=$id, fpage=$page. Sql:$sql . Error: $@" );
